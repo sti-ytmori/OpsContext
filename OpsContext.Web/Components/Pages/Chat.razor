@@ -1,0 +1,461 @@
+@page "/chat"
+@using Markdig
+@using OpsContext.Agents.Agents
+@using OpsContext.Agents.Tools
+@using OpsContext.Agents.Services
+@using OpsContext.Agents.Models
+@using OpsContext.Web.Services
+@inject OrchestratorAgent Orchestrator
+@inject IContextStoreTool ContextStore
+@inject IDataGridStore GridStore
+@inject ICuratorQueue CuratorQueue
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+@inject RoleStateService RoleState
+@inject IUserStore UserStore
+@inject IRolePromptStore RolePromptStore
+@inject ILogger<Chat> logger
+
+<PageTitle>OpsContext - Chat</PageTitle>
+
+<div style="display:flex; gap:20px; height:calc(100vh - 100px); max-width:1400px; margin:0 auto; padding:0 24px;">
+
+    @* ─── 左ペイン: チャット ─────────────────────────────────── *@
+    <div style="flex:1; min-width:0; display:flex; flex-direction:column;">
+
+        @* ヘッダー *@
+        <MudPaper Elevation="0"
+                  Style="background:#ffffff; border:1px solid #e9ecef; border-radius:12px; padding:14px 18px; margin-bottom:16px; display:flex; align-items:center; gap:12px;">
+            @if (_linkedTableName is not null)
+            {
+                <MudIcon Icon="@Icons.Material.Outlined.TableChart"
+                         Style="color:#2e7d32; font-size:20px;" />
+                <div style="min-width:0;">
+                    <MudText Typo="Typo.caption" Style="color:#6c757d; font-weight:500; text-transform:uppercase; letter-spacing:0.5px;">
+                        業務データ
+                    </MudText>
+                    <MudText Typo="Typo.body2" Style="font-weight:600; color:#1a1a2e; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                        @_linkedTableName
+                    </MudText>
+                </div>
+            }
+            else
+            {
+                <MudIcon Icon="@Icons.Material.Outlined.Chat"
+                         Style="color:#1565c0; font-size:20px;" />
+                <MudText Typo="Typo.body2" Style="color:#6c757d;">
+                    新規チャット
+                </MudText>
+            }
+            <MudSpacer />
+            <MudChip T="string"
+                     Size="Size.Small"
+                     Style="@($"background:{RoleColor(RoleState.CurrentRole)}20; color:{RoleColor(RoleState.CurrentRole)}; font-weight:600; font-size:12px;")">
+                @RoleState.CurrentRole
+            </MudChip>
+        </MudPaper>
+
+        @* チャット本体 *@
+        <MudPaper Elevation="0"
+                  Style="background:#ffffff; border:1px solid #e9ecef; border-radius:12px; flex:1; display:flex; flex-direction:column; overflow:hidden;">
+
+            @* メッセージ履歴 *@
+            <div class="chat-scroll"
+                 style="flex:1; padding:20px; display:flex; flex-direction:column; gap:12px;"
+                 id="chat-history">
+
+                @if (_history.Count == 0 && !_isLoading)
+                {
+                    <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:48px; color:#adb5bd;">
+                        <MudIcon Icon="@Icons.Material.Outlined.SmartToy"
+                                 Style="font-size:48px; margin-bottom:16px; color:#dee2e6;" />
+                        <MudText Typo="Typo.body1" Style="font-weight:500; color:#6c757d; margin-bottom:8px;">
+                            エージェントに質問してください
+                        </MudText>
+                        <MudText Typo="Typo.body2" Style="text-align:center; line-height:1.8; color:#adb5bd;">
+                            例: 「A商事から弁P-101を200個、納期2週間で見積依頼が来ました。どう対応しますか？」
+                        </MudText>
+                    </div>
+                }
+
+                @foreach (var turn in _history)
+                {
+                    @if (turn.Speaker == "ユーザー")
+                    {
+                        <div style="display:flex; justify-content:flex-end;">
+                            <div style="max-width:80%;">
+                                <MudText Typo="Typo.caption"
+                                         Style="text-align:right; color:#6c757d; margin-bottom:4px; font-weight:500;">
+                                    あなた
+                                </MudText>
+                                <div style="background:#1565c0; color:#ffffff; padding:12px 16px; border-radius:16px 16px 4px 16px; line-height:1.7;">
+                                    <MudText Typo="Typo.body2" Style="color:#ffffff; white-space:pre-wrap;">@turn.Message</MudText>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div style="display:flex; gap:10px; align-items:flex-start;">
+                            <div style="@($"flex-shrink:0; width:32px; height:32px; border-radius:50%; background:{RoleColor(RoleState.CurrentRole)}15; border:2px solid {RoleColor(RoleState.CurrentRole)}30; display:flex; align-items:center; justify-content:center;")">
+                                <MudIcon Icon="@Icons.Material.Filled.SmartToy"
+                                         Style="@($"font-size:16px; color:{RoleColor(RoleState.CurrentRole)};")" />
+                            </div>
+                            <div style="max-width:85%; min-width:0;">
+                                <MudText Typo="Typo.caption"
+                                         Style="@($"color:{RoleColor(RoleState.CurrentRole)}; margin-bottom:4px; font-weight:600;")">
+                                    @turn.Speaker
+                                </MudText>
+                                <div style="background:#f8f9fa; border:1px solid #e9ecef; padding:12px 16px; border-radius:4px 16px 16px 16px;">
+                                    <div class="md-body">@((MarkupString)RenderMarkdown(turn.Message))</div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                }
+
+                @if (_isLoading)
+                {
+                    <div style="display:flex; gap:10px; align-items:center; padding:8px;">
+                        <div style="width:32px; height:32px; border-radius:50%; background:#f0f4ff; border:2px solid #c8d8ff; display:flex; align-items:center; justify-content:center;">
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Primary" />
+                        </div>
+                        <MudText Typo="Typo.body2" Style="color:#6c757d; font-style:italic;">
+                            エージェントが分析中...
+                        </MudText>
+                    </div>
+                }
+            </div>
+
+            @* 入力エリア *@
+            <div style="border-top:1px solid #e9ecef; padding:16px;">
+                <MudTextField @bind-Value="_userMessage"
+                              Placeholder="メッセージを入力... (Ctrl+Enter で送信)"
+                              Variant="Variant.Outlined"
+                              Lines="2"
+                              Immediate="true"
+                              OnKeyDown="OnKeyDown"
+                              Disabled="_isLoading"
+                              Style="margin-bottom:10px;" />
+                <div style="display:flex; gap:8px;">
+                    @if (_isLoading)
+                    {
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Error"
+                                   OnClick="@(() => _cts?.Cancel())"
+                                   StartIcon="@Icons.Material.Filled.Stop"
+                                   Style="border-radius:8px; font-weight:600;">
+                            キャンセル
+                        </MudButton>
+                    }
+                    else
+                    {
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   OnClick="SendMessage"
+                                   Disabled="@(string.IsNullOrWhiteSpace(_userMessage))"
+                                   StartIcon="@Icons.Material.Filled.Send"
+                                   Style="border-radius:8px; font-weight:600;">
+                            送信
+                        </MudButton>
+                    }
+                    <MudTooltip Text="エージェントの最後の回答を決定として案件コンテキストに保存し、Curatorがロールフォーカスを更新します"
+                                Placement="Placement.Top" Arrow="true">
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Success"
+                                   OnClick="ConfirmDecision"
+                                   Disabled="@(_isLoading || _history.Count == 0)"
+                                   StartIcon="@Icons.Material.Filled.CheckCircle"
+                                   Style="border-radius:8px; font-weight:600;">
+                            コンテキストに保存
+                        </MudButton>
+                    </MudTooltip>
+                    <MudSpacer />
+                    <MudTooltip Text="コンテキスト履歴を表示">
+                        <MudIconButton Icon="@Icons.Material.Outlined.History"
+                                       Size="Size.Small"
+                                       Style="color:#6c757d;"
+                                       OnClick="@(() => Nav.NavigateTo($"/context?caseId={Uri.EscapeDataString(_caseId)}"))" />
+                    </MudTooltip>
+                </div>
+            </div>
+        </MudPaper>
+    </div>
+
+    @* ─── 右ペイン: ツール呼出ログ ────────────────────────────── *@
+    <div style="width:380px; flex-shrink:0; overflow-y:auto; display:flex; flex-direction:column; gap:12px;">
+
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+            <MudIcon Icon="@Icons.Material.Outlined.BuildCircle"
+                     Style="font-size:18px; color:#6c757d;" />
+            <MudText Typo="Typo.subtitle2" Style="font-weight:600; color:#495057;">
+                ツール呼出ログ
+            </MudText>
+            @if (_toolCalls.Count > 0)
+            {
+                <MudChip T="string"
+                         Size="Size.Small"
+                         Style="background:#e3f2fd; color:#1565c0; font-size:11px; height:20px;">
+                    @_toolCalls.Count
+                </MudChip>
+            }
+        </div>
+
+        @if (_toolCalls.Count == 0)
+        {
+            <MudPaper Elevation="0"
+                      Style="padding:32px 20px; text-align:center; border:1px dashed #dee2e6; border-radius:12px; background:#ffffff;">
+                <MudIcon Icon="@Icons.Material.Outlined.BuildCircle"
+                         Style="font-size:36px; color:#dee2e6; display:block; margin:0 auto 12px;" />
+                <MudText Typo="Typo.body2" Style="color:#adb5bd; line-height:1.7;">
+                    エージェントがERPデータを取得すると、ここにログが表示されます
+                </MudText>
+            </MudPaper>
+        }
+
+        @foreach (var tc in _toolCalls)
+        {
+            <MudPaper Elevation="0"
+                      Style="background:#ffffff; border:1px solid #e9ecef; border-radius:12px; overflow:hidden;">
+                @* カードヘッダー *@
+                <div style="background:#f8f9fa; border-bottom:1px solid #e9ecef; padding:10px 14px; display:flex; align-items:center; gap:8px;">
+                    <div style="width:8px; height:8px; border-radius:50%; background:#28a745;"></div>
+                    <MudText Typo="Typo.caption"
+                             Style="font-family:'Menlo','Consolas',monospace; font-weight:600; color:#495057; letter-spacing:0.3px;">
+                        @tc.ToolName
+                    </MudText>
+                </div>
+                @* カード本文 *@
+                <div style="padding:12px 14px;">
+                    @if (!string.IsNullOrEmpty(tc.Query))
+                    {
+                        <div class="tool-query" style="margin-bottom:10px;">@tc.Query</div>
+                    }
+                    <MudText Typo="Typo.body2"
+                             Style="white-space:pre-wrap; line-height:1.7; color:#212529; font-size:12px;">
+                        @tc.ResultMarkdown
+                    </MudText>
+                </div>
+            </MudPaper>
+        }
+
+        @* ─── ロールフォーカス（FocusSnapshot）────────────────────── *@
+        <div style="display:flex; align-items:center; gap:8px; margin-top:12px; margin-bottom:4px;">
+            <MudIcon Icon="@Icons.Material.Outlined.CenterFocusStrong"
+                     Style="font-size:18px; color:#6c757d;" />
+            <MudText Typo="Typo.subtitle2" Style="font-weight:600; color:#495057;">
+                ロールフォーカス
+            </MudText>
+            <MudIconButton Icon="@Icons.Material.Outlined.Refresh"
+                           Size="Size.Small"
+                           title="フォーカスを再読み込み"
+                           OnClick="ReloadFocusSnapshot" />
+        </div>
+
+        @if (!string.IsNullOrEmpty(_focusSnapshot))
+        {
+            <MudPaper Elevation="0"
+                      Style="background:#fffde7; border:1px solid #fff176; border-radius:12px; padding:14px 16px;">
+                <MudText Typo="Typo.body2"
+                         Style="white-space:pre-wrap; line-height:1.75; color:#37474f; font-size:12px;">
+                    @_focusSnapshot
+                </MudText>
+            </MudPaper>
+        }
+        else
+        {
+            <MudPaper Elevation="0"
+                      Style="padding:20px; text-align:center; border:1px dashed #dee2e6; border-radius:12px; background:#ffffff;">
+                <MudText Typo="Typo.body2" Style="color:#adb5bd; line-height:1.7; font-size:12px;">
+                    「コンテキストに保存」後に生成します
+                </MudText>
+            </MudPaper>
+        }
+    </div>
+</div>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthStateTask { get; set; } = null!;
+
+    [SupplyParameterFromQuery(Name = "caseId")]
+    public string? CaseId { get; set; }
+
+    private string _caseId = "";
+    private string? _linkedTableName;
+    private string _userMessage = "";
+    private bool _isLoading = false;
+    private CancellationTokenSource? _cts;
+    private List<(string Speaker, string Message)> _history = new();
+    private List<ToolCallResult> _toolCalls = new();
+    private string? _focusSnapshot;
+    private string? _rolePrompt;
+    private string? _personalPrompt;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _caseId = string.IsNullOrEmpty(CaseId)
+            ? Guid.NewGuid().ToString()
+            : CaseId;
+
+        // ロールプロンプト・パーソナルプロンプトをロード
+        try
+        {
+            var authState = await AuthStateTask;
+            var userName  = authState.User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
+
+            var rolePromptTask      = RolePromptStore.GetPromptAsync(RoleState.CurrentRole);
+            var personalPromptTask  = userName is not null
+                ? UserStore.GetByUserNameAsync(userName)
+                : Task.FromResult<AppUser?>(null);
+
+            await Task.WhenAll(rolePromptTask, personalPromptTask);
+
+            _rolePrompt     = rolePromptTask.Result;
+            _personalPrompt = personalPromptTask.Result?.PersonalPrompt;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "プロンプトのロードに失敗しました（続行）");
+        }
+
+        if (!string.IsNullOrEmpty(CaseId))
+            _linkedTableName = GridStore.GetTable(CaseId)?.Name;
+
+        if (!string.IsNullOrEmpty(CaseId))
+        {
+            try
+            {
+                var entries = await ContextStore.ReadCaseContextAsync(
+                    _caseId, RoleState.CurrentRole, CancellationToken.None);
+
+                foreach (var entry in entries)
+                {
+                    var speaker = entry.Kind == "decision" ? "決定" : entry.Role;
+                    _history.Add((speaker, $"[{entry.Kind}] {entry.Text}"));
+                }
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"コンテキストロード失敗: {ex.Message}", Severity.Warning);
+            }
+
+            await ReloadFocusSnapshot();
+        }
+    }
+
+    private async Task ReloadFocusSnapshot()
+    {
+        try
+        {
+            _focusSnapshot = await ContextStore.ReadLatestFocusSnapshotAsync(
+                _caseId, RoleState.CurrentRole, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "FocusSnapshot read failed");
+        }
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && e.CtrlKey && !string.IsNullOrWhiteSpace(_userMessage))
+        {
+            await SendMessage();
+        }
+    }
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(_userMessage) || _isLoading) return;
+
+        var msg = _userMessage.Trim();
+        _userMessage = "";
+        _history.Add(("ユーザー", msg));
+        _isLoading = true;
+        StateHasChanged();
+
+        _cts = new CancellationTokenSource();
+        try
+        {
+            var request = new AgentRequest(
+                _caseId,
+                RoleState.CurrentRole,
+                msg,
+                _history.AsReadOnly(),
+                RolePrompt:     _rolePrompt,
+                PersonalPrompt: _personalPrompt);
+
+            var response = await Orchestrator.HandleAsync(request, _cts.Token);
+            _history.Add(($"{RoleState.CurrentRole} Agent", response.Message));
+            _toolCalls.AddRange(response.ToolCalls);
+        }
+        catch (OperationCanceledException)
+        {
+            _history.Add(("エージェント", "（キャンセルされました）"));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"エージェントエラー: {ex.Message}", Severity.Error);
+            _history.Add(("エージェント", $"（エラー）{ex.Message}"));
+        }
+        finally
+        {
+            _cts?.Dispose();
+            _cts = null;
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ConfirmDecision()
+    {
+        if (_history.Count == 0) return;
+
+        try
+        {
+            var lastAgentMsg = _history
+                .LastOrDefault(t => t.Speaker != "ユーザー").Message
+                ?? "（チャットによる決定）";
+
+            await ContextStore.AppendDecisionAsync(
+                _caseId,
+                RoleState.CurrentRole,
+                "user",
+                lastAgentMsg,
+                CancellationToken.None);
+
+            var evt = new ConversationEvent(
+                _caseId,
+                RoleState.CurrentRole,
+                "user",
+                _history.TakeLast(6).ToList().AsReadOnly(),
+                DateTimeOffset.UtcNow);
+            CuratorQueue.Enqueue(evt);
+
+            Snackbar.Add("決定を記録しました。Curatorが要約を生成します。", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"決定記録エラー: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private static readonly MarkdownPipeline _mdPipeline =
+        new MarkdownPipelineBuilder()
+            .UseAdvancedExtensions()
+            .UsePipeTables()
+            .Build();
+
+    private static string RenderMarkdown(string? text) =>
+        string.IsNullOrEmpty(text) ? "" : Markdown.ToHtml(text.Replace("\r\n", "\n"), _mdPipeline);
+
+    private static string RoleColor(string role) => role switch
+    {
+        "Sales"      => "#2e7d32",
+        "Purchasing" => "#e65100",
+        "Production" => "#1565c0",
+        "Accounting" => "#b71c1c",
+        _            => "#424242"
+    };
+}

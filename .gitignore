@@ -1,0 +1,51 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+
+# .NET
+project.lock.json
+artifacts/
+*.nupkg
+*.snupkg
+TestResults/
+
+# Secrets — Azure 接続情報は appsettings.Development.json に直書きするためコミットしない
+**/appsettings.Development.json
+**/appsettings.Local.json
+**/appsettings.json
+*.pfx
+*.key
+.env
+secret.md
+
+# IDE
+.vs/
+.idea/
+*.DotSettings
+*.DotSettings.user
+
+# JetBrains Rider
+.rider/
+
+# VS Code
+.vscode/
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Node.js / Playwright
+node_modules/
+dev/tests/playwright-report/
+dev/tests/test-results/
+
+.mcp.json

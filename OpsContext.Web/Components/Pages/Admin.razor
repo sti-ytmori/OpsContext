@@ -1,0 +1,207 @@
+@page "/admin"
+@using OpsContext.Agents.Tools
+@inject IDemoService DemoService
+@inject ISnackbar Snackbar
+@inject IConfiguration Configuration
+
+<PageTitle>OpsContext - 管理・デバッグ</PageTitle>
+
+@if (!_unlocked)
+{
+    @* ─── パスワードゲート *@
+    <div style="max-width:400px; margin:80px auto 0;">
+        <MudPaper Elevation="0"
+                  Style="background:#ffffff; border:1px solid #e9ecef; border-radius:16px; padding:36px 32px;">
+            <div style="text-align:center; margin-bottom:28px;">
+                <div style="width:52px; height:52px; border-radius:14px; background:#f8f9fa; margin:0 auto 16px; display:flex; align-items:center; justify-content:center;">
+                    <MudIcon Icon="@Icons.Material.Outlined.Lock" Style="font-size:26px; color:#6c757d;" />
+                </div>
+                <MudText Typo="Typo.h6" Style="font-weight:700;">管理画面</MudText>
+                <MudText Typo="Typo.caption" Style="color:#6c757d;">パスワードを入力してください</MudText>
+            </div>
+
+            <MudTextField @bind-Value="_password"
+                          Label="パスワード"
+                          InputType="InputType.Password"
+                          Variant="Variant.Outlined"
+                          FullWidth="true"
+                          Immediate="true"
+                          Error="_showError"
+                          ErrorText="パスワードが違います"
+                          Style="margin-bottom:4px;"
+                          OnKeyDown="OnKeyDown" />
+
+            @if (_showError)
+            {
+                <MudText Color="Color.Error" Typo="Typo.caption" Style="display:block; margin-bottom:12px;">パスワードが違います</MudText>
+            }
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       FullWidth="true"
+                       OnClick="@TryUnlockAsync"
+                       Style="border-radius:8px; font-weight:600; height:44px;">
+                ロック解除
+            </MudButton>
+        </MudPaper>
+    </div>
+}
+else
+{
+    @* ─── 管理コンテンツ *@
+    <div style="max-width:720px; margin:0 auto;">
+
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:32px;">
+            <div style="display:flex; align-items:center; gap:12px;">
+                <MudIcon Icon="@Icons.Material.Outlined.AdminPanelSettings"
+                         Style="font-size:32px; color:#6c757d;" />
+                <div>
+                    <MudText Typo="Typo.h5" Style="font-weight:700; line-height:1.2;">管理・デバッグ</MudText>
+                    <MudText Typo="Typo.caption" Style="color:#6c757d;">
+                        デモ用データの投入・リセットを行います
+                    </MudText>
+                </div>
+            </div>
+            <MudTooltip Text="ロック">
+                <MudIconButton Icon="@Icons.Material.Outlined.LockOpen"
+                               Size="Size.Small"
+                               Style="color:#adb5bd;"
+                               OnClick="@LockAsync" />
+            </MudTooltip>
+        </div>
+
+        @* ─── デモデータ管理 *@
+        <MudPaper Elevation="0"
+                  Style="background:#ffffff; border:1px solid #e9ecef; border-radius:16px; padding:28px; margin-bottom:24px;">
+            <MudText Typo="Typo.subtitle1" Style="font-weight:700; margin-bottom:8px;">デモデータ管理</MudText>
+            <MudText Typo="Typo.body2" Style="color:#6c757d; margin-bottom:24px; line-height:1.7;">
+                サンプルデータには3件の案件（進行中・保留・完了）と計15件のコンテキストエントリが含まれます。<br />
+                @(DemoService.IsAvailable ? "インメモリ（モックモード）に保存されます。" : "Azure SQL に INSERT されます。リセットはサンプル行のみ削除します。")
+            </MudText>
+
+            <div style="display:flex; gap:12px; flex-wrap:wrap;">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Outlined.PlaylistAdd"
+                           OnClick="SeedDataAsync"
+                           Disabled="_isBusy"
+                           Style="border-radius:8px; font-weight:600;">
+                    サンプルデータを投入
+                </MudButton>
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Error"
+                           StartIcon="@Icons.Material.Outlined.DeleteSweep"
+                           OnClick="ResetDataAsync"
+                           Disabled="_isBusy"
+                           Style="border-radius:8px; font-weight:600;">
+                    データをリセット
+                </MudButton>
+            </div>
+
+            @if (_lastAction is not null)
+            {
+                <MudText Typo="Typo.caption" Style="color:#6c757d; margin-top:12px; display:block;">
+                    最終操作: @_lastAction (@_lastActionAt?.ToString("HH:mm:ss"))
+                </MudText>
+            }
+        </MudPaper>
+
+        @* ─── 動作モード表示 *@
+        <MudPaper Elevation="0"
+                  Style="background:#ffffff; border:1px solid #e9ecef; border-radius:16px; padding:28px;">
+            <MudText Typo="Typo.subtitle1" Style="font-weight:700; margin-bottom:16px;">動作モード</MudText>
+            <div style="display:flex; align-items:center; gap:8px;">
+                <div style="@($"width:10px; height:10px; border-radius:50%; background:{(DemoService.IsAvailable ? "#2e7d32" : "#1565c0")};")"></div>
+                <MudText Typo="Typo.body2" Style="font-weight:600;">
+                    @(DemoService.IsAvailable ? "モックモード（インメモリ）" : "本番モード（Azure接続）")
+                </MudText>
+            </div>
+            <MudText Typo="Typo.caption" Style="color:#6c757d; margin-top:6px;">
+                @(DemoService.IsAvailable
+                    ? "SQL Server・Azure AI Search に接続せず、インメモリデータで動作しています。"
+                    : "Azure SQL・Azure AI Search に接続して動作しています。")
+            </MudText>
+        </MudPaper>
+
+    </div>
+}
+
+@code {
+    private bool _unlocked;
+    private string _password = string.Empty;
+    private bool _showError;
+    private bool _isBusy;
+    private string? _lastAction;
+    private DateTime? _lastActionAt;
+
+    private async Task TryUnlockAsync(MouseEventArgs _)
+    {
+        var correct = Configuration["OpsContext:AdminPassword"] ?? "opsadmin";
+        if (_password == correct)
+        {
+            _unlocked = true;
+            _showError = false;
+            _password = string.Empty;
+        }
+        else
+        {
+            _showError = true;
+        }
+        StateHasChanged();
+        await Task.CompletedTask;
+    }
+
+    private async Task LockAsync(MouseEventArgs _)
+    {
+        _unlocked = false;
+        _password = string.Empty;
+        _showError = false;
+        StateHasChanged();
+        await Task.CompletedTask;
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await TryUnlockAsync(new MouseEventArgs());
+    }
+
+    private async Task SeedDataAsync()
+    {
+        _isBusy = true;
+        try
+        {
+            await DemoService.SeedSampleDataAsync();
+            _lastAction = "サンプルデータ投入";
+            _lastActionAt = DateTime.Now;
+            Snackbar.Add("サンプルデータを投入しました", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"失敗: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task ResetDataAsync()
+    {
+        _isBusy = true;
+        try
+        {
+            await DemoService.ResetAsync();
+            _lastAction = "データリセット";
+            _lastActionAt = DateTime.Now;
+            Snackbar.Add("データをリセットしました", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"失敗: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+}

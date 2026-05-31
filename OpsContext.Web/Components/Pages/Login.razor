@@ -1,0 +1,130 @@
+@page "/login"
+@layout OpsContext.Web.Components.Layout.BlankLayout
+@attribute [AllowAnonymous]
+@inject IUserStore UserStore
+
+<PageTitle>ログイン - OpsContext</PageTitle>
+
+<div style="min-height:100vh; background:#f8f9fc; display:flex; align-items:center; justify-content:center; padding:24px;">
+    <div style="max-width:400px; width:100%;">
+
+        @* ─── ヘッダ ────────────────────────────────────────── *@
+        <div style="text-align:center; margin-bottom:40px;">
+            <MudText Typo="Typo.h5"
+                     Style="font-weight:700; color:#1565c0; letter-spacing:-0.5px; margin-bottom:8px;">
+                OpsContext
+            </MudText>
+            <MudChip T="string" Size="Size.Small"
+                     Style="background:#e3f2fd; color:#1565c0; font-size:10px; font-weight:600; height:20px; margin-bottom:16px;">
+                ERP Agent
+            </MudChip>
+            <MudText Typo="Typo.body2" Style="color:#6c757d;">
+                アカウントにサインイン
+            </MudText>
+        </div>
+
+        @* ─── カード ─────────────────────────────────────────── *@
+        <div style="background:#ffffff; border:1px solid #e9ecef; border-radius:16px; padding:32px;">
+
+            @* ─── エラーメッセージ ───────────────────────────────── *@
+            @if (_isError)
+            {
+                <MudAlert Severity="Severity.Error" Style="margin-bottom:24px;">
+                    ユーザー名またはパスワードが正しくありません。
+                </MudAlert>
+            }
+
+            @* ─── ログインフォーム ───────────────────────────────── *@
+            <form method="post" action="/auth/login">
+
+                <div style="margin-bottom:20px;">
+                    <label style="display:block; font-size:13px; font-weight:600; color:#495057; margin-bottom:6px;">
+                        ユーザー名
+                    </label>
+                    <input type="text"
+                           name="userName"
+                           placeholder="ユーザー名を入力"
+                           style="width:100%; padding:10px 12px; border:1px solid #ced4da; border-radius:8px;
+                                  font-size:14px; color:#1a1a2e; background:#ffffff; box-sizing:border-box;
+                                  font-family:inherit; outline:none;" />
+                </div>
+
+                <div style="margin-bottom:24px;">
+                    <label style="display:block; font-size:13px; font-weight:600; color:#495057; margin-bottom:6px;">
+                        パスワード
+                    </label>
+                    <input type="password"
+                           name="password"
+                           placeholder="パスワードを入力"
+                           style="width:100%; padding:10px 12px; border:1px solid #ced4da; border-radius:8px;
+                                  font-size:14px; color:#1a1a2e; background:#ffffff; box-sizing:border-box;
+                                  font-family:inherit; outline:none;" />
+                </div>
+
+                <button type="submit"
+                        style="width:100%; padding:11px; background:#1565c0; color:#ffffff; border:none;
+                               border-radius:8px; font-size:14px; font-weight:600; cursor:pointer;
+                               font-family:inherit; letter-spacing:0.3px;">
+                    サインイン
+                </button>
+            </form>
+
+            @* ─── 区切り ─────────────────────────────────────────── *@
+            <div style="display:flex; align-items:center; margin:24px 0;">
+                <div style="flex:1; height:1px; background:#e9ecef;"></div>
+                <span style="padding:0 12px; font-size:12px; color:#adb5bd; white-space:nowrap;">または</span>
+                <div style="flex:1; height:1px; background:#e9ecef;"></div>
+            </div>
+
+            @* ─── EntraID ボタン ──────────────────────────────────── *@
+            <button type="button" disabled
+                    style="width:100%; padding:11px; background:#f8f9fa; color:#adb5bd; border:1px solid #e9ecef;
+                           border-radius:8px; font-size:14px; font-weight:600; cursor:not-allowed;
+                           font-family:inherit; display:flex; align-items:center; justify-content:center; gap:10px;">
+                <svg width="18" height="18" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="1" y="1" width="9" height="9" fill="#c8c8c8"/>
+                    <rect x="11" y="1" width="9" height="9" fill="#c8c8c8"/>
+                    <rect x="1" y="11" width="9" height="9" fill="#c8c8c8"/>
+                    <rect x="11" y="11" width="9" height="9" fill="#c8c8c8"/>
+                </svg>
+                Microsoft アカウントでサインイン
+                <span style="font-size:10px; font-weight:500; background:#e9ecef; color:#adb5bd;
+                             padding:2px 6px; border-radius:4px; margin-left:4px;">
+                    未実装
+                </span>
+            </button>
+
+        </div>
+
+        @* ─── フッタ ─────────────────────────────────────────── *@
+        <div style="text-align:center; margin-top:24px;">
+            <MudText Typo="Typo.caption" Style="color:#adb5bd;">
+                デモ環境
+            </MudText>
+        </div>
+
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? ErrorParam { get; set; }
+
+    private IReadOnlyList<AppUser> _users = [];
+    private bool _isError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _users = await UserStore.ListAsync();
+        _isError = ErrorParam == "1";
+    }
+
+    private static string RoleLabel(string role) => role switch
+    {
+        "Sales"      => "営業",
+        "Purchasing" => "購買",
+        "Production" => "生産",
+        "Accounting" => "経理",
+        _            => role
+    };
+}

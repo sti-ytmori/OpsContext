@@ -1,0 +1,79 @@
+@page "/"
+@inject NavigationManager Nav
+@inject OpsContext.Web.Services.RoleStateService RoleState
+@inject OpsContext.Agents.Tools.IDataGridStore GridStore
+
+<PageTitle>OpsContext - ホーム</PageTitle>
+
+<div style="max-width:760px; margin:0 auto;">
+
+    @* ─── ヒーローセクション ─────────────────────────────── *@
+    <div style="text-align:center; padding:48px 24px 40px;">
+        <MudText Typo="Typo.h4" Style="font-weight:700; color:#1a1a2e; margin-bottom:12px; letter-spacing:-0.5px;">
+            OpsContext
+        </MudText>
+        <MudText Typo="Typo.body1" Style="color:#495057; max-width:600px; margin:0 auto 16px; line-height:1.9;">
+            同じ案件データを、営業は「受注チャンス」として見て、経理は「回収リスク」として読む。<br />
+            OpsContext は、ロールごとにエージェントの語り口とフォーカスを切り替え、<br />
+            引継ぎのたびに失われていた業務文脈を自動で継承します。
+        </MudText>
+    </div>
+
+    @* ─── クイックアクション（3枚） ──────────────────────── *@
+    <MudGrid Style="margin-bottom:48px;" Justify="Justify.Center">
+
+        @* 新規チャット *@
+        <MudItem xs="12" sm="4">
+            <MudPaper Elevation="0"
+                      Style="background:#ffffff; border:1px solid #e9ecef; border-radius:16px; padding:28px 20px; text-align:center; cursor:pointer; transition:box-shadow 0.15s;"
+                      @onclick="@(() => Nav.NavigateTo($"/chat?caseId={GridStore.GetDefaultCaseId()}"))">
+                <div style="width:56px; height:56px; border-radius:14px; background:#e3f2fd; margin:0 auto 18px; display:flex; align-items:center; justify-content:center;">
+                    <MudIcon Icon="@Icons.Material.Outlined.Chat" Style="font-size:28px; color:#1565c0;" />
+                </div>
+                <MudText Typo="Typo.subtitle2" Style="font-weight:700; margin-bottom:8px;">新規チャット</MudText>
+                <MudText Typo="Typo.caption" Style="color:#6c757d; line-height:1.7;">
+                    業務案件についてAIエージェントに<br/>相談・分析を依頼する
+                </MudText>
+            </MudPaper>
+        </MudItem>
+
+        @* 業務データ *@
+        <MudItem xs="12" sm="4">
+            <MudPaper Elevation="0"
+                      Style="background:#ffffff; border:1px solid #e9ecef; border-radius:16px; padding:28px 20px; text-align:center; cursor:pointer; transition:box-shadow 0.15s;"
+                      @onclick="@(() => Nav.NavigateTo("/data"))">
+                <div style="width:56px; height:56px; border-radius:14px; background:#e8f5e9; margin:0 auto 18px; display:flex; align-items:center; justify-content:center;">
+                    <MudIcon Icon="@Icons.Material.Outlined.TableChart" Style="font-size:28px; color:#2e7d32;" />
+                </div>
+                <MudText Typo="Typo.subtitle2" Style="font-weight:700; margin-bottom:8px;">業務データ</MudText>
+                <MudText Typo="Typo.caption" Style="color:#6c757d; line-height:1.7;">
+                    Grid でデータを管理し<br/>AIとERP突合・編集を協働する
+                </MudText>
+            </MudPaper>
+        </MudItem>
+
+        @* コンテキスト管理 *@
+        <MudItem xs="12" sm="4">
+            <MudPaper Elevation="0"
+                      Style="background:#ffffff; border:1px solid #e9ecef; border-radius:16px; padding:28px 20px; text-align:center; cursor:pointer; transition:box-shadow 0.15s;"
+                      @onclick="@(() => Nav.NavigateTo("/context"))">
+                <div style="width:56px; height:56px; border-radius:14px; background:#fff8e1; margin:0 auto 18px; display:flex; align-items:center; justify-content:center;">
+                    <MudIcon Icon="@Icons.Material.Outlined.ManageHistory" Style="font-size:28px; color:#f9a825;" />
+                </div>
+                <MudText Typo="Typo.subtitle2" Style="font-weight:700; margin-bottom:8px;">コンテキスト管理</MudText>
+                <MudText Typo="Typo.caption" Style="color:#6c757d; line-height:1.7;">
+                    蓄積された決定・観察ログを<br/>確認・管理する
+                </MudText>
+            </MudPaper>
+        </MudItem>
+
+    </MudGrid>
+</div>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        // ページ初期表示時にシードデータを投入しておく
+        await GridStore.SeedSampleAsync();
+    }
+}

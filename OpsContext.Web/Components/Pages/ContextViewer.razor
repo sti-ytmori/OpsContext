@@ -1,0 +1,346 @@
+@page "/context"
+@using OpsContext.Agents.Tools
+@using OpsContext.Agents.Models
+@inject IContextStoreTool ContextStore
+@inject IDataGridStore GridStore
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>OpsContext - コンテキスト管理</PageTitle>
+
+<div style="max-width:960px; margin:0 auto;">
+
+    @* ─── ヘッダー ─────────────────────────────────────────── *@
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:24px;">
+        <MudIcon Icon="@Icons.Material.Outlined.ManageHistory"
+                 Style="font-size:32px; color:#f9a825;" />
+        <div>
+            <MudText Typo="Typo.h5" Style="font-weight:700; line-height:1.2;">コンテキスト管理</MudText>
+            <MudText Typo="Typo.caption" Style="color:#757575;">
+                業務データごとに蓄積された決定・観察ログを確認・管理します
+            </MudText>
+        </div>
+    </div>
+
+    @* ─── 案件選択 + フィルター ──────────────────────────────── *@
+    <MudPaper Elevation="0"
+              Style="background:#f8f9fa; border:1px solid #e9ecef; border-radius:12px; padding:20px; margin-bottom:24px;">
+        <MudGrid>
+            <MudItem xs="12" md="5">
+                <MudTextField @bind-Value="_caseIdInput"
+                              Label="業務データID"
+                              Variant="Variant.Outlined"
+                              Placeholder="業務データIDを入力（または下のボタンから選択）"
+                              Adornment="Adornment.End"
+                              AdornmentIcon="@Icons.Material.Filled.Search"
+                              OnAdornmentClick="LoadContext"
+                              FullWidth="true"
+                              OnKeyDown="OnCaseIdKeyDown" />
+            </MudItem>
+            <MudItem xs="6" md="3">
+                <MudSelect T="string"
+                           @bind-Value="_roleFilter"
+                           Label="ロールフィルター"
+                           Variant="Variant.Outlined"
+                           FullWidth="true">
+                    <MudSelectItem Value="@("")">全ロール</MudSelectItem>
+                    <MudSelectItem Value="@("Sales")">Sales（営業）</MudSelectItem>
+                    <MudSelectItem Value="@("Purchasing")">Purchasing（購買）</MudSelectItem>
+                    <MudSelectItem Value="@("Production")">Production（生産）</MudSelectItem>
+                    <MudSelectItem Value="@("Accounting")">Accounting（経理）</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="6" md="2">
+                <MudSelect T="string"
+                           @bind-Value="_kindFilter"
+                           Label="種別"
+                           Variant="Variant.Outlined"
+                           FullWidth="true">
+                    <MudSelectItem Value="@("")">全種別</MudSelectItem>
+                    <MudSelectItem Value="@("decision")">決定</MudSelectItem>
+                    <MudSelectItem Value="@("observation")">観察</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="2" Style="display:flex; align-items:center;">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           OnClick="LoadContext"
+                           Disabled="_isLoading"
+                           FullWidth="true"
+                           StartIcon="@Icons.Material.Filled.Refresh">
+                    読み込む
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    @* ─── モックケース選択ショートカット ─────────────────────── *@
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px;">
+        <MudText Typo="Typo.caption" Style="color:#757575; align-self:center;">業務データ:</MudText>
+        @foreach (var t in _tables)
+        {
+            <MudChip T="string"
+                     Size="Size.Small"
+                     Variant="Variant.Outlined"
+                     Color="Color.Primary"
+                     OnClick="@(() => SelectSampleCase(t.Id))">
+                @t.Name
+            </MudChip>
+        }
+    </div>
+
+    @* ─── 統計サマリー ───────────────────────────────────────── *@
+    @if (_entries.Count > 0)
+    {
+        <MudGrid Style="margin-bottom:24px;">
+            @foreach (var stat in GetRoleStats())
+            {
+                <MudItem xs="6" sm="3">
+                    <MudPaper Elevation="1"
+                              Style="@($"padding:16px; border-radius:12px; border-left:4px solid {RoleColor(stat.Role)}; text-align:center;")">
+                        <MudText Typo="Typo.h5" Style="font-weight:700;">@stat.Count</MudText>
+                        <MudText Typo="Typo.caption" Style="color:#757575;">@stat.Role</MudText>
+                    </MudPaper>
+                </MudItem>
+            }
+            <MudItem xs="6" sm="3">
+                <MudPaper Elevation="1"
+                          Style="padding:16px; border-radius:12px; border-left:4px solid #424242; text-align:center;">
+                    <MudText Typo="Typo.h5" Style="font-weight:700;">@_entries.Count</MudText>
+                    <MudText Typo="Typo.caption" Style="color:#757575;">合計エントリ</MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    }
+
+    @* ─── タイムライン ───────────────────────────────────────── *@
+    @if (_isLoading)
+    {
+        <div style="text-align:center; padding:48px;">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Large" />
+            <MudText Typo="Typo.body2" Style="margin-top:16px; color:#757575;">コンテキストを読み込んでいます...</MudText>
+        </div>
+    }
+    else if (_hasFetched && FilteredEntries.Count == 0)
+    {
+        <MudPaper Elevation="0"
+                  Style="padding:48px; text-align:center; border:2px dashed #e0e0e0; border-radius:12px;">
+            <MudIcon Icon="@Icons.Material.Outlined.Inbox"
+                     Style="font-size:48px; color:#bdbdbd; display:block; margin:0 auto 16px;" />
+            <MudText Typo="Typo.body1" Style="color:#757575;">
+                @(_entries.Count > 0 ? "フィルター条件に一致するエントリがありません" : "この業務データにはまだエントリがありません")
+            </MudText>
+            @if (_entries.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Style="color:#9e9e9e; margin-top:8px;">
+                    チャットで「この線で進めます」ボタンを押すと、決定が記録されます
+                </MudText>
+            }
+        </MudPaper>
+    }
+    else
+    {
+        <div style="position:relative;">
+            @* タイムライン縦線 *@
+            <div style="position:absolute; left:28px; top:0; bottom:0; width:2px; background:linear-gradient(to bottom, #e3f2fd, #e0e0e0); z-index:0;"></div>
+
+            @foreach (var entry in FilteredEntries)
+            {
+                <div style="display:flex; gap:16px; margin-bottom:20px; position:relative; z-index:1;">
+                    @* タイムラインドット *@
+                    <div style="@($"flex-shrink:0; width:56px; height:56px; border-radius:50%; background:{KindBgColor(entry.Kind)}; border:3px solid {KindBorderColor(entry.Kind)}; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px rgba(0,0,0,0.1);")">
+                        <MudIcon Icon="@KindIcon(entry.Kind)"
+                                 Style="@($"color:{KindIconColor(entry.Kind)}; font-size:22px;")" />
+                    </div>
+
+                    @* カード *@
+                    <MudPaper Elevation="1"
+                              Style="@($"flex:1; padding:16px 20px; border-radius:12px; border-left:3px solid {RoleColor(entry.Role)};")">
+                        @* カードヘッダー *@
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+                            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                <MudChip T="string"
+                                         Size="Size.Small"
+                                         Style="@($"background:{RoleColor(entry.Role)}; color:white; font-weight:600;")">
+                                    @entry.Role
+                                </MudChip>
+                                <MudChip T="string"
+                                         Size="Size.Small"
+                                         Variant="Variant.Outlined"
+                                         Style="@($"border-color:{KindBorderColor(entry.Kind)}; color:{KindBorderColor(entry.Kind)};")">
+                                    @KindLabel(entry.Kind)
+                                </MudChip>
+                                <MudText Typo="Typo.caption" Style="color:#9e9e9e;">
+                                    @entry.Author
+                                </MudText>
+                            </div>
+                            <MudText Typo="Typo.caption" Style="color:#9e9e9e; white-space:nowrap;">
+                                @entry.CreatedAt.LocalDateTime.ToString("yyyy/MM/dd HH:mm")
+                            </MudText>
+                        </div>
+
+                        @* 本文 *@
+                        <MudText Typo="Typo.body2"
+                                 Style="white-space:pre-wrap; line-height:1.7; color:#212121;">
+                            @entry.Text
+                        </MudText>
+
+                        @* SQL参照（あれば） *@
+                        @if (!string.IsNullOrEmpty(entry.RefSql))
+                        {
+                            <div style="margin-top:10px; background:#f5f5f5; border-radius:6px; padding:8px 12px;">
+                                <MudText Typo="Typo.caption" Style="color:#616161; font-family:monospace; white-space:pre-wrap;">
+                                    @entry.RefSql
+                                </MudText>
+                            </div>
+                        }
+                    </MudPaper>
+                </div>
+            }
+        </div>
+    }
+
+    @* ─── 案件チャットへ戻るリンク ──────────────────────────── *@
+    @if (!string.IsNullOrEmpty(_caseIdInput))
+    {
+        <div style="margin-top:32px; text-align:center;">
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Chat"
+                       OnClick="GoToChat">
+                この業務データのチャットへ
+            </MudButton>
+        </div>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "caseId")]
+    public string? CaseId { get; set; }
+
+    private string _caseIdInput = "";
+    private string _roleFilter = "";
+    private string _kindFilter = "";
+    private bool _isLoading = false;
+    private bool _hasFetched = false;
+    private List<ContextEntry> _entries = new();
+    private IReadOnlyList<GridTable> _tables = [];
+
+    private IReadOnlyList<ContextEntry> FilteredEntries => _entries
+        .Where(e => string.IsNullOrEmpty(_roleFilter) || e.Role == _roleFilter)
+        .Where(e => string.IsNullOrEmpty(_kindFilter) || e.Kind == _kindFilter)
+        .OrderBy(e => e.CreatedAt)
+        .ToList();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        await GridStore.SeedSampleAsync();
+        _tables = GridStore.ListTables();
+
+        if (!string.IsNullOrEmpty(CaseId))
+        {
+            _caseIdInput = CaseId;
+            await LoadContext();
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task OnCaseIdKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await LoadContext();
+    }
+
+    private async Task SelectSampleCase(string caseId)
+    {
+        _caseIdInput = caseId;
+        await LoadContext();
+    }
+
+    private async Task LoadContext()
+    {
+        if (string.IsNullOrWhiteSpace(_caseIdInput)) return;
+
+        _isLoading = true;
+        _hasFetched = false;
+        StateHasChanged();
+
+        try
+        {
+            var results = await ContextStore.ReadCaseContextAsync(
+                _caseIdInput.Trim(), null, CancellationToken.None);
+            _entries = results.ToList();
+            _hasFetched = true;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"コンテキスト読み込み失敗: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void GoToChat()
+    {
+        Nav.NavigateTo($"/chat?caseId={Uri.EscapeDataString(_caseIdInput)}");
+    }
+
+    private IEnumerable<(string Role, int Count)> GetRoleStats()
+    {
+        var roles = new[] { "Sales", "Accounting", "Purchasing", "Production" };
+        return roles
+            .Select(r => (Role: r, Count: _entries.Count(e => e.Role == r)))
+            .Where(s => s.Count > 0);
+    }
+
+    private static string RoleColor(string role) => role switch
+    {
+        "Sales"      => "#2e7d32",
+        "Purchasing" => "#e65100",
+        "Production" => "#1565c0",
+        "Accounting" => "#b71c1c",
+        _            => "#424242"
+    };
+
+    private static string KindLabel(string kind) => kind switch
+    {
+        "decision"    => "決定",
+        "observation" => "観察",
+        "handoff"     => "引き継ぎ",
+        _             => kind
+    };
+
+    private static string KindIcon(string kind) => kind switch
+    {
+        "decision"    => Icons.Material.Filled.CheckCircle,
+        "observation" => Icons.Material.Filled.Lightbulb,
+        "handoff"     => Icons.Material.Filled.SwapHoriz,
+        _             => Icons.Material.Filled.Notes
+    };
+
+    private static string KindBgColor(string kind) => kind switch
+    {
+        "decision"    => "#e8f5e9",
+        "observation" => "#fff8e1",
+        _             => "#f3f4f6"
+    };
+
+    private static string KindBorderColor(string kind) => kind switch
+    {
+        "decision"    => "#43a047",
+        "observation" => "#f9a825",
+        _             => "#9e9e9e"
+    };
+
+    private static string KindIconColor(string kind) => kind switch
+    {
+        "decision"    => "#2e7d32",
+        "observation" => "#f57f17",
+        _             => "#616161"
+    };
+}

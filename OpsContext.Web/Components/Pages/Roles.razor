@@ -1,0 +1,135 @@
+@page "/roles"
+@attribute [Authorize]
+@using OpsContext.Web.Services
+@using Microsoft.AspNetCore.Authorization
+@inject IRolePromptStore RolePromptStore
+@inject ISnackbar Snackbar
+
+@* ロール設定は業務ロール (Sales/Purchasing/Production/Accounting) のみ対象。Admin は除外。 *@
+
+<PageTitle>OpsContext - ロール設定</PageTitle>
+
+<div style="max-width:900px; margin:0 auto;">
+
+    @* ─── ヘッダー ─────────────────────────────────────────────────── *@
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:24px; flex-wrap:wrap;">
+        <div style="width:44px; height:44px; border-radius:12px; background:#fff3e0; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+            <MudIcon Icon="@Icons.Material.Outlined.Tune" Style="font-size:24px; color:#e65100;" />
+        </div>
+        <div style="flex:1; min-width:0;">
+            <MudText Typo="Typo.h6" Style="font-weight:700; color:#1a1a2e; line-height:1.2;">
+                ロール設定
+            </MudText>
+            <MudText Typo="Typo.caption" Style="color:#6c757d;">
+                ロール別の追加指示プロンプトを設定します。設定内容は当該ロールの全ユーザーに適用されます（編集は Admin のみ）。
+            </MudText>
+        </div>
+    </div>
+
+    @if (_entries is null)
+    {
+        <div style="padding:60px; text-align:center;">
+            <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+        </div>
+    }
+    else
+    {
+        <div style="display:flex; flex-direction:column; gap:20px;">
+            @foreach (var entry in _entries)
+            {
+                <MudPaper Elevation="0"
+                          Style="border:1px solid #e9ecef; border-radius:12px; padding:20px;">
+                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+                        <div style="@($"width:10px; height:10px; border-radius:50%; background:{RoleColor(entry.Role)};")"></div>
+                        <MudText Typo="Typo.subtitle1" Style="@($"font-weight:700; color:{RoleColor(entry.Role)};")">
+                            @entry.Role
+                        </MudText>
+                        <MudText Typo="Typo.caption" Style="color:#adb5bd; margin-left:auto;">
+                            最終更新: @entry.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                        </MudText>
+                    </div>
+
+                    <MudTextField @bind-Value="_editBuffers[entry.Role]"
+                                  Label="@($"{entry.Role} ロール共通の追加指示")"
+                                  Lines="4"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Disabled="@(!_isAdmin)"
+                                  Placeholder="@(_isAdmin ? $"例: {entry.Role}担当として回答する際に常に意識してほしいこと…" : "（Admin のみ編集できます）")" />
+
+                    @if (_isAdmin)
+                    {
+                        <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+                            <MudButton Variant="Variant.Outlined"
+                                       Size="Size.Small"
+                                       Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Outlined.Save"
+                                       OnClick="@(() => SaveRole(entry.Role))"
+                                       Disabled="_savingRole == entry.Role"
+                                       Style="border-radius:8px;">
+                                @(_savingRole == entry.Role ? "保存中..." : "保存")
+                            </MudButton>
+                        </div>
+                    }
+                </MudPaper>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthStateTask { get; set; } = null!;
+
+    private IReadOnlyList<RolePromptEntry>? _entries;
+    private Dictionary<string, string> _editBuffers = new();
+    private bool _isAdmin;
+    private string? _savingRole;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateTask;
+        _isAdmin = authState.User.FindFirst("opscontext_is_admin")?.Value == "true";
+
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        var all = await RolePromptStore.ListAsync();
+        // ロール設定は業務ロールのみ対象（Admin ロールは除外）
+        _entries = all.Where(e => e.Role != "Admin").ToList();
+        _editBuffers = _entries.ToDictionary(
+            e => e.Role,
+            e => e.Prompt ?? "");
+    }
+
+    private async Task SaveRole(string role)
+    {
+        if (!_isAdmin) { Snackbar.Add("Admin 権限が必要です。", Severity.Error); return; }
+
+        _savingRole = role;
+        try
+        {
+            var value = _editBuffers.TryGetValue(role, out var v) ? v : null;
+            await RolePromptStore.SetPromptAsync(role, value);
+            Snackbar.Add($"{role} のロールプロンプトを保存しました。", Severity.Success);
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"保存失敗: {ex.Message}", Severity.Error);
+        }
+        finally { _savingRole = null; }
+    }
+
+    private static string RoleColor(string role) => role switch
+    {
+        "Admin"      => "#6a1b9a",
+        "Sales"      => "#2e7d32",
+        "Purchasing" => "#e65100",
+        "Production" => "#1565c0",
+        "Accounting" => "#b71c1c",
+        _            => "#424242"
+    };
+}

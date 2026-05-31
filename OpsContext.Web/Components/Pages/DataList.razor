@@ -1,0 +1,186 @@
+@page "/data"
+@using OpsContext.Agents.Models
+@using OpsContext.Agents.Tools
+@inject IDataGridStore GridStore
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>OpsContext - 業務データ</PageTitle>
+
+<div style="max-width:800px; margin:0 auto;">
+
+    @* ─── ヘッダー ─────────────────────────────────────────── *@
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:28px;">
+        <div style="width:44px; height:44px; border-radius:12px; background:#e8f5e9; display:flex; align-items:center; justify-content:center;">
+            <MudIcon Icon="@Icons.Material.Outlined.TableChart"
+                     Style="font-size:24px; color:#2e7d32;" />
+        </div>
+        <div>
+            <MudText Typo="Typo.h6" Style="font-weight:700; color:#1a1a2e; line-height:1.2;">
+                業務データ
+            </MudText>
+            <MudText Typo="Typo.caption" Style="color:#6c757d;">
+                定義済みの業務データ一覧。クリックして Grid 編集・AI 協働を開始します。
+            </MudText>
+        </div>
+        <MudSpacer />
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.AddCircleOutline"
+                   OnClick="OpenCreateDialog"
+                   Style="border-radius:8px; font-weight:600;">
+            新規業務データ
+        </MudButton>
+    </div>
+
+    @* ─── テーブル一覧 ──────────────────────────────────────── *@
+    @if (_tables.Count == 0)
+    {
+        <MudPaper Elevation="0"
+                  Style="padding:48px; text-align:center; border:1px dashed #dee2e6; border-radius:16px; background:#ffffff;">
+            <MudIcon Icon="@Icons.Material.Outlined.TableRows"
+                     Style="font-size:48px; color:#dee2e6; display:block; margin:0 auto 16px;" />
+            <MudText Typo="Typo.body1" Style="color:#6c757d; margin-bottom:8px; font-weight:500;">
+                業務データがありません
+            </MudText>
+            <MudText Typo="Typo.body2" Style="color:#adb5bd;">
+                「新規業務データ」から名前を付けてテーブルを作成してください。
+            </MudText>
+        </MudPaper>
+    }
+    else
+    {
+        <div style="display:flex; flex-direction:column; gap:12px;">
+            @foreach (var table in _tables)
+            {
+                <MudPaper Elevation="0"
+                          Style="background:#ffffff; border:1px solid #e9ecef; border-radius:12px; padding:16px 20px; display:flex; align-items:center; gap:16px; cursor:pointer; transition:box-shadow 0.15s;"
+                          @onclick="@(() => OpenTable(table.Id))"
+                          @onmouseenter="@(() => _hoveredId = table.Id)"
+                          @onmouseleave="@(() => _hoveredId = null)">
+
+                    <div style="width:40px; height:40px; border-radius:10px; background:#e8f5e9; flex-shrink:0; display:flex; align-items:center; justify-content:center;">
+                        <MudIcon Icon="@Icons.Material.Outlined.GridOn"
+                                 Style="font-size:20px; color:#2e7d32;" />
+                    </div>
+
+                    <div style="flex:1; min-width:0;">
+                        <MudText Typo="Typo.subtitle2"
+                                 Style="font-weight:700; color:#1a1a2e; margin-bottom:2px;">
+                            @table.Name
+                        </MudText>
+                        <MudText Typo="Typo.caption" Style="color:#6c757d;">
+                            @table.Columns.Count 列　@table.Rows.Count 行
+                        </MudText>
+                    </div>
+
+                    <div style="display:flex; align-items:center; gap:8px;" @onclick:stopPropagation="true">
+                        <MudButton Variant="Variant.Outlined"
+                                   Size="Size.Small"
+                                   StartIcon="@Icons.Material.Outlined.OpenInNew"
+                                   OnClick="@(() => OpenTable(table.Id))"
+                                   Style="border-radius:8px;">
+                            開く
+                        </MudButton>
+                        @if (_tables.Count > 1)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Outlined.DeleteOutline"
+                                           Size="Size.Small"
+                                           Color="Color.Error"
+                                           title="削除"
+                                           OnClick="@(() => DeleteTable(table.Id))" />
+                        }
+                    </div>
+                </MudPaper>
+            }
+        </div>
+    }
+</div>
+
+@* ─── 新規業務データ作成ダイアログ ──────────────────────────── *@
+@if (_showCreateDialog)
+{
+    <MudOverlay Visible="true" DarkBackground="true" AutoClose="false" />
+    <div style="position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:1000; width:380px;">
+        <MudPaper Elevation="4" Style="border-radius:12px; overflow:hidden;">
+            <div style="background:#2e7d32; padding:14px 18px; display:flex; align-items:center; gap:8px;">
+                <MudIcon Icon="@Icons.Material.Filled.AddCircleOutline" Style="color:#ffffff;" />
+                <MudText Typo="Typo.subtitle1" Style="color:#ffffff; font-weight:600;">
+                    新規業務データを作成
+                </MudText>
+            </div>
+            <div style="padding:20px;">
+                <MudText Typo="Typo.caption" Style="color:#6c757d; margin-bottom:12px; display:block; line-height:1.6;">
+                    業務データの名前を入力してください。<br />
+                    列定義は作成後に「列追加」や「Excel取込」で追加できます。
+                </MudText>
+                <MudTextField @bind-Value="_newTableName"
+                              Label="業務データ名"
+                              Variant="Variant.Outlined"
+                              Placeholder="例: 発注明細、在庫一覧、プロジェクト管理"
+                              Immediate="true"
+                              OnKeyDown="OnCreateKeyDown"
+                              Style="margin-bottom:16px;" />
+                <div style="display:flex; gap:8px; justify-content:flex-end;">
+                    <MudButton Variant="Variant.Text"
+                               OnClick="@(() => _showCreateDialog = false)">
+                        キャンセル
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Disabled="@string.IsNullOrWhiteSpace(_newTableName)"
+                               OnClick="ConfirmCreate">
+                        作成して開く
+                    </MudButton>
+                </div>
+            </div>
+        </MudPaper>
+    </div>
+}
+
+@code {
+    private List<GridTable> _tables = [];
+    private string? _hoveredId;
+    private bool _showCreateDialog;
+    private string _newTableName = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await GridStore.SeedSampleAsync();
+        _tables = GridStore.ListTables().ToList();
+    }
+
+    private void OpenTable(string id)
+    {
+        Nav.NavigateTo($"/data/{id}");
+    }
+
+    private void OpenCreateDialog()
+    {
+        _newTableName = "";
+        _showCreateDialog = true;
+    }
+
+    private async Task OnCreateKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_newTableName))
+            await ConfirmCreate();
+    }
+
+    private async Task ConfirmCreate()
+    {
+        var name = _newTableName.Trim();
+        if (string.IsNullOrEmpty(name)) return;
+        _showCreateDialog = false;
+        var id = GridStore.CreateTable(name);
+        await Task.CompletedTask;
+        Nav.NavigateTo($"/data/{id}");
+    }
+
+    private void DeleteTable(string id)
+    {
+        GridStore.DeleteTable(id);
+        _tables = GridStore.ListTables().ToList();
+        Snackbar.Add("業務データを削除しました", Severity.Info);
+    }
+}

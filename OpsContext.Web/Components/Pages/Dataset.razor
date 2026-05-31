@@ -1,0 +1,301 @@
+@page "/dataset"
+@using OpsContext.Agents.Tools
+@using OpsContext.Agents.Models
+@inject IErpDatasetStore DatasetStore
+@inject ISnackbar Snackbar
+
+<PageTitle>OpsContext - 基幹データセット</PageTitle>
+
+<div style="max-width:1100px; margin:0 auto;">
+
+    @* ─── ヘッダー ────────────────────────────────────────────── *@
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:24px; flex-wrap:wrap;">
+        <div style="width:44px; height:44px; border-radius:12px; background:#e3f2fd; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+            <MudIcon Icon="@Icons.Material.Outlined.Storage"
+                     Style="font-size:24px; color:#1565c0;" />
+        </div>
+        <div style="flex:1; min-width:0;">
+            <MudText Typo="Typo.h6" Style="font-weight:700; color:#1a1a2e; line-height:1.2;">
+                基幹データセット
+            </MudText>
+            <MudText Typo="Typo.caption" Style="color:#6c757d;">
+                基幹システムから同期したマスタ・トランザクションデータのローカルコピーです。AI 突合の参照元となります。
+            </MudText>
+        </div>
+
+        @* 最終同期日時 *@
+        <div style="display:flex; align-items:center; gap:8px; padding:6px 14px; background:#f8f9fa; border-radius:8px; border:1px solid #e9ecef;">
+            <MudIcon Icon="@Icons.Material.Outlined.Sync"
+                     Style="font-size:16px; color:#6c757d;" />
+            <div>
+                <MudText Typo="Typo.caption" Style="color:#6c757d; font-size:11px;">最終同期</MudText>
+                <MudText Typo="Typo.body2" Style="font-size:12px; font-weight:600; color:#343a40;">
+                    @_lastSyncedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                </MudText>
+            </div>
+        </div>
+
+        @* データ更新ボタン（未実装・スタブ） *@
+        <MudTooltip Text="基幹システムとの同期は今後実装予定です">
+            <MudButton Variant="Variant.Outlined"
+                       Size="Size.Small"
+                       StartIcon="@Icons.Material.Outlined.CloudSync"
+                       OnClick="TriggerSyncAsync"
+                       Disabled="_isSyncing"
+                       Style="border-radius:8px; color:#1565c0; border-color:#1565c0;">
+                @if (_isSyncing)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true"
+                                         Style="width:14px; height:14px; margin-right:4px;" />
+                    <span>同期中...</span>
+                }
+                else
+                {
+                    <span>データ更新（未実装）</span>
+                }
+            </MudButton>
+        </MudTooltip>
+    </div>
+
+    @* ─── データセット タブ ─────────────────────────────────── *@
+    <MudPaper Elevation="0"
+              Style="background:#ffffff; border:1px solid #e9ecef; border-radius:12px; margin-bottom:24px; overflow:hidden;">
+
+        <MudTabs @bind-ActivePanelIndex="_activeTab"
+                 Elevation="0"
+                 Rounded="false"
+                 Style="border-bottom:1px solid #e9ecef;">
+            @foreach (var meta in _metas)
+            {
+                <MudTabPanel Text="@meta.DisplayName" Style="font-size:13px; font-weight:600;">
+                    @{
+                        var view = DatasetStore.GetDataset(meta.Key);
+                    }
+                    @if (view is null || view.Rows.Count == 0)
+                    {
+                        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:200px; color:#adb5bd;">
+                            <MudIcon Icon="@Icons.Material.Outlined.TableRows"
+                                     Style="font-size:48px; margin-bottom:12px;" />
+                            <MudText Typo="Typo.body2">データがありません</MudText>
+                        </div>
+                    }
+                    else
+                    {
+                        <div style="padding:12px 16px 6px; border-bottom:1px solid #f0f0f0; display:flex; align-items:center; gap:8px;">
+                            <MudText Typo="Typo.caption" Style="color:#6c757d;">
+                                @meta.Description
+                            </MudText>
+                            <MudChip T="string" Size="Size.Small"
+                                     Style="background:#e3f2fd; color:#1565c0; font-size:10px; height:18px; margin-left:auto;">
+                                @view.Rows.Count 件
+                            </MudChip>
+                        </div>
+                        <div style="overflow-x:auto; max-height:420px; overflow-y:auto;">
+                            <table style="border-collapse:collapse; width:100%; font-size:12px;">
+                                <thead>
+                                    <tr style="background:#f8f9fa; position:sticky; top:0; z-index:1;">
+                                        @foreach (var col in view.Columns)
+                                        {
+                                            <th style="padding:6px 12px; text-align:left; font-weight:600; color:#495057; white-space:nowrap; border-bottom:2px solid #e9ecef; border-right:1px solid #e9ecef;">
+                                                @col
+                                            </th>
+                                        }
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var row in view.Rows)
+                                    {
+                                        <tr style="border-bottom:1px solid #f0f0f0;" class="dataset-row">
+                                            @for (int ci = 0; ci < view.Columns.Count; ci++)
+                                            {
+                                                var cell = ci < row.Count ? row[ci] : null;
+                                                <td style="padding:5px 12px; border-right:1px solid #f5f5f5; white-space:nowrap; color:#343a40;">
+                                                    @RenderCell(view.Key, view.Columns[ci], cell)
+                                                </td>
+                                            }
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </MudTabPanel>
+            }
+        </MudTabs>
+    </MudPaper>
+
+    @* ─── 同期設定カード（見た目のみ・本番ビルドでも表示） ──── *@
+    <MudPaper Elevation="0"
+              Style="background:#ffffff; border:1px solid #e9ecef; border-radius:12px; padding:24px 28px;">
+
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:20px;">
+            <MudIcon Icon="@Icons.Material.Outlined.SettingsEthernet"
+                     Style="font-size:20px; color:#6c757d;" />
+            <MudText Typo="Typo.subtitle1" Style="font-weight:700; color:#1a1a2e;">
+                同期設定
+            </MudText>
+            <MudChip T="string" Size="Size.Small"
+                     Style="background:#fff8e1; color:#f9a825; font-size:10px; height:18px; margin-left:auto;">
+                設定変更は未実装
+            </MudChip>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+
+            <div>
+                <MudText Typo="Typo.caption" Style="color:#6c757d; display:block; margin-bottom:4px; font-weight:600;">
+                    接続先（基幹レプリカ）
+                </MudText>
+                <MudTextField Value="@("Azure SQL Database — erp-replica.database.windows.net")"
+                              Variant="Variant.Outlined"
+                              Disabled="true"
+                              Style="font-size:12px;" />
+            </div>
+
+            <div>
+                <MudText Typo="Typo.caption" Style="color:#6c757d; display:block; margin-bottom:4px; font-weight:600;">
+                    同期スケジュール
+                </MudText>
+                <MudTextField Value="@("毎日 02:00 JST（バッチ同期）")"
+                              Variant="Variant.Outlined"
+                              Disabled="true"
+                              Style="font-size:12px;" />
+            </div>
+
+            <div>
+                <MudText Typo="Typo.caption" Style="color:#6c757d; display:block; margin-bottom:4px; font-weight:600;">
+                    対象テーブル
+                </MudText>
+                <MudTextField Value="@("Customers, Products, Inventory, ProductionCapacity, Orders, OrderLines")"
+                              Variant="Variant.Outlined"
+                              Disabled="true"
+                              Lines="2"
+                              Style="font-size:12px;" />
+            </div>
+
+            <div>
+                <MudText Typo="Typo.caption" Style="color:#6c757d; display:block; margin-bottom:4px; font-weight:600;">
+                    最終同期結果
+                </MudText>
+                <div style="display:flex; align-items:center; gap:8px; padding:8px 14px; border:1px solid #e9ecef; border-radius:8px; background:#f8f9fa;">
+                    <div style="width:8px; height:8px; border-radius:50%; background:#2e7d32; flex-shrink:0;"></div>
+                    <MudText Typo="Typo.body2" Style="font-size:12px; color:#2e7d32; font-weight:600;">
+                        成功
+                    </MudText>
+                    <MudText Typo="Typo.caption" Style="color:#6c757d; margin-left:4px;">
+                        @_lastSyncedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") 完了
+                    </MudText>
+                </div>
+            </div>
+
+        </div>
+
+        <div style="margin-top:16px; padding:10px 14px; background:#f8f9fa; border-radius:8px; border:1px solid #e9ecef;">
+            <MudText Typo="Typo.caption" Style="color:#6c757d; line-height:1.7;">
+                <strong>Note:</strong>
+                このデータは基幹 ERP システムから定期同期して取り込んだスナップショットです。
+                AI エージェントは「この見積を基幹と突合して」などの指示を受けた際にここのデータを参照します。
+                リアルタイムの在庫状況が必要な場合は「データ更新」ボタン（今後実装予定）をご利用ください。
+            </MudText>
+        </div>
+    </MudPaper>
+</div>
+
+<style>
+    .dataset-row:hover td {
+        background: #f0f7ff;
+    }
+</style>
+
+@code {
+    private int _activeTab;
+    private bool _isSyncing;
+    private DateTimeOffset _lastSyncedAt;
+    private IReadOnlyList<ErpDatasetMeta> _metas = [];
+
+    protected override void OnInitialized()
+    {
+        _metas = DatasetStore.ListDatasets();
+        _lastSyncedAt = DatasetStore.LastSyncedAt;
+    }
+
+    private async Task TriggerSyncAsync()
+    {
+        _isSyncing = true;
+        StateHasChanged();
+        try
+        {
+            // 擬似 delay（演出）
+            await Task.Delay(1200);
+            _lastSyncedAt = await DatasetStore.TriggerSyncAsync();
+            Snackbar.Add("同期日時を更新しました（実際の同期は未実装）", Severity.Info);
+        }
+        finally
+        {
+            _isSyncing = false;
+            StateHasChanged();
+        }
+    }
+
+    // ─── セルのレンダリング ──────────────────────────────────────
+
+    private RenderFragment RenderCell(string datasetKey, string colName, string? value) => builder =>
+    {
+        if (value is null)
+        {
+            builder.AddContent(0, "");
+            return;
+        }
+
+        // 与信格付けカラー
+        if (datasetKey == "customers" && colName == "格付け")
+        {
+            var (bg, fg) = value switch
+            {
+                "A" => ("#e8f5e9", "#2e7d32"),
+                "B" => ("#fff8e1", "#f9a825"),
+                "C" => ("#fce4ec", "#b71c1c"),
+                _   => ("#f5f5f5", "#6c757d")
+            };
+            builder.OpenElement(0, "span");
+            builder.AddAttribute(1, "style",
+                $"background:{bg}; color:{fg}; font-weight:700; padding:2px 8px; border-radius:4px; font-size:11px;");
+            builder.AddContent(2, value);
+            builder.CloseElement();
+            return;
+        }
+
+        // 受注ステータスカラー
+        if (datasetKey == "orders" && colName == "ステータス")
+        {
+            var (bg, fg) = value switch
+            {
+                "Confirmed" => ("#e3f2fd", "#1565c0"),
+                "Pending"   => ("#fff8e1", "#f9a825"),
+                "Shipped"   => ("#e8f5e9", "#2e7d32"),
+                "Closed"    => ("#f5f5f5", "#6c757d"),
+                _           => ("#f5f5f5", "#6c757d")
+            };
+            builder.OpenElement(0, "span");
+            builder.AddAttribute(1, "style",
+                $"background:{bg}; color:{fg}; font-weight:600; padding:2px 8px; border-radius:4px; font-size:11px;");
+            builder.AddContent(2, value);
+            builder.CloseElement();
+            return;
+        }
+
+        // 数値系は右揃え
+        if (colName.Contains("（円）") || colName.Contains("手持") || colName.Contains("引当")
+            || colName.Contains("安全") || colName.Contains("有効") || colName.Contains("数量")
+            || colName.Contains("1日") || colName.Contains("2週間") || colName.Contains("合計"))
+        {
+            builder.OpenElement(0, "span");
+            builder.AddAttribute(1, "style", "display:block; text-align:right; font-variant-numeric:tabular-nums;");
+            builder.AddContent(2, value);
+            builder.CloseElement();
+            return;
+        }
+
+        builder.AddContent(0, value);
+    };
+}

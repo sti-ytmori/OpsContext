@@ -1,0 +1,184 @@
+@inherits LayoutComponentBase
+@inject NavigationManager Nav
+@inject OpsContext.Web.Services.RoleStateService RoleState
+
+<MudThemeProvider Theme="_theme" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="0"
+               Style="@($"background-color:#ffffff; border-bottom:1px solid #e9ecef; color:#1a1a2e;")">
+        @* ロゴ（クリックでトップへ） *@
+        <div style="display:flex; align-items:center; gap:4px; cursor:pointer;" @onclick="@(() => Nav.NavigateTo("/"))">
+            <MudText Typo="Typo.h6"
+                     Style="font-weight:700; letter-spacing:-0.5px; color:#1565c0; margin-right:4px;">
+                OpsContext
+            </MudText>
+            <MudChip T="string"
+                     Size="Size.Small"
+                     Style="background:#e3f2fd; color:#1565c0; font-size:10px; font-weight:600; height:20px; margin-left:4px;">
+                ERP Agent
+            </MudChip>
+        </div>
+
+        <MudSpacer />
+
+        @* ナビゲーションリンク *@
+        <div style="display:flex; gap:4px; align-items:center; margin-right:16px;">
+            <MudButton Href="/chat"
+                       Variant="Variant.Text"
+                       StartIcon="@Icons.Material.Outlined.Chat"
+                       Style="color:#495057; font-weight:500;"
+                       Size="Size.Small">
+                新規チャット
+            </MudButton>
+            <MudButton Href="/data"
+                       Variant="Variant.Text"
+                       StartIcon="@Icons.Material.Outlined.TableChart"
+                       Style="color:#495057; font-weight:500;"
+                       Size="Size.Small">
+                業務データ
+            </MudButton>
+            <MudButton Href="/dataset"
+                       Variant="Variant.Text"
+                       StartIcon="@Icons.Material.Outlined.Storage"
+                       Style="color:#495057; font-weight:500;"
+                       Size="Size.Small">
+                データセット
+            </MudButton>
+            <MudButton Href="/context"
+                       Variant="Variant.Text"
+                       StartIcon="@Icons.Material.Outlined.ManageHistory"
+                       Style="color:#495057; font-weight:500;"
+                       Size="Size.Small">
+                コンテキスト管理
+            </MudButton>
+            <MudButton Href="/accounts"
+                       Variant="Variant.Text"
+                       StartIcon="@Icons.Material.Outlined.People"
+                       Style="color:#495057; font-weight:500;"
+                       Size="Size.Small">
+                アカウント
+            </MudButton>
+            <MudButton Href="/roles"
+                       Variant="Variant.Text"
+                       StartIcon="@Icons.Material.Outlined.Tune"
+                       Style="color:#495057; font-weight:500;"
+                       Size="Size.Small">
+                ロール設定
+            </MudButton>
+            @if (_isAdmin)
+            {
+                <MudButton Href="/login-history"
+                           Variant="Variant.Text"
+                           StartIcon="@Icons.Material.Outlined.History"
+                           Style="color:#495057; font-weight:500;"
+                           Size="Size.Small">
+                    ログイン履歴
+                </MudButton>
+            }
+        </div>
+
+        @* ユーザー情報 + ログアウト *@
+        <div style="display:flex; align-items:center; gap:8px; padding:4px 12px; background:#f8f9fa; border-radius:8px; border:1px solid #e9ecef;">
+            <div style="@($"width:10px; height:10px; border-radius:50%; background:{RoleColor(RoleState.CurrentRole)};")"></div>
+            <MudText Typo="Typo.body2" Style="font-weight:500; font-size:13px; color:#1a1a2e;">
+                @_displayName
+            </MudText>
+            <MudChip T="string"
+                     Size="Size.Small"
+                     Style="@($"background:{RoleColor(RoleState.CurrentRole)}20; color:{RoleColor(RoleState.CurrentRole)}; font-size:11px; font-weight:600; height:20px;")">
+                @RoleState.CurrentRole
+            </MudChip>
+            @* ログアウトボタン *@
+            <MudIconButton Icon="@Icons.Material.Outlined.Logout"
+                           Size="Size.Small"
+                           Style="color:#6c757d;"
+                           title="ログアウト"
+                           OnClick="@(() => Nav.NavigateTo("/auth/logout", forceLoad: true))" />
+        </div>
+
+        @* ロール色ストライプ *@
+        <div style="@($"position:absolute; bottom:0; left:0; right:0; height:3px; background:{RoleColor(RoleState.CurrentRole)}; opacity:0.8;")"></div>
+    </MudAppBar>
+
+    <MudMainContent Style="background:#f8f9fc; min-height:100vh;">
+        <MudContainer MaxWidth="MaxWidth.False" Style="padding:24px;">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthStateTask { get; set; } = null!;
+
+    private string _displayName = "";
+    private bool   _isAdmin;
+
+
+    private MudTheme _theme = new()
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary = "#1565c0",
+            PrimaryContrastText = "#ffffff",
+            Secondary = "#e65100",
+            AppbarBackground = "#ffffff",
+            AppbarText = "#1a1a2e",
+            Background = "#f8f9fc",
+            Surface = "#ffffff",
+            DrawerBackground = "#ffffff",
+            TextPrimary = "#1a1a2e",
+            TextSecondary = "#6c757d",
+            ActionDefault = "#6c757d",
+        },
+        Typography = new Typography
+        {
+            Default = new DefaultTypography
+            {
+                FontFamily = ["Inter", "Noto Sans JP", "Hiragino Kaku Gothic ProN", "sans-serif"],
+                FontSize = "14px",
+                FontWeight = "400",
+                LineHeight = "1.6",
+            },
+        },
+        LayoutProperties = new LayoutProperties
+        {
+            DefaultBorderRadius = "8px",
+        }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateTask;
+        var user = authState.User;
+
+        // DisplayName (GivenName クレーム) を優先、なければログイン ID を使用
+        _displayName = user.FindFirst(System.Security.Claims.ClaimTypes.GivenName)?.Value
+                    ?? user.Identity?.Name
+                    ?? "";
+
+        // ロールクレームから RoleStateService を初期化する
+        var role = user.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value
+                ?? user.FindFirst("opscontext_role")?.Value
+                ?? "Sales";
+
+        RoleState.SetRole(role);
+
+        // 管理者フラグ
+        _isAdmin = user.FindFirst("opscontext_is_admin")?.Value == "true";
+    }
+
+    private static string RoleColor(string role) => role switch
+    {
+        "Admin"      => "#6a1b9a",
+        "Sales"      => "#2e7d32",
+        "Purchasing" => "#e65100",
+        "Production" => "#1565c0",
+        "Accounting" => "#b71c1c",
+        _            => "#424242"
+    };
+}

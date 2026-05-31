@@ -1,0 +1,428 @@
+@page "/accounts"
+@attribute [Authorize]
+@using OpsContext.Web.Services
+@using Microsoft.AspNetCore.Authorization
+@inject IUserStore UserStore
+@inject ISnackbar Snackbar
+
+<PageTitle>OpsContext - アカウント管理</PageTitle>
+
+<div style="max-width:900px; margin:0 auto;">
+
+    @* ─── ヘッダー ─────────────────────────────────────────────────── *@
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:24px; flex-wrap:wrap;">
+        <div style="width:44px; height:44px; border-radius:12px; background:#e3f2fd; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+            <MudIcon Icon="@Icons.Material.Outlined.People" Style="font-size:24px; color:#1565c0;" />
+        </div>
+        <div style="flex:1; min-width:0;">
+            <MudText Typo="Typo.h6" Style="font-weight:700; color:#1a1a2e; line-height:1.2;">
+                アカウント管理
+            </MudText>
+            <MudText Typo="Typo.caption" Style="color:#6c757d;">
+                ユーザーアカウントの一覧・作成・編集・削除を行います。パーソナルプロンプトは本人のみ編集できます。
+            </MudText>
+        </div>
+        @if (_isAdmin)
+        {
+            <MudButton Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Outlined.PersonAdd"
+                       Color="Color.Primary"
+                       Size="Size.Small"
+                       OnClick="OpenCreateDialog"
+                       Style="border-radius:8px;">
+                新規作成
+            </MudButton>
+        }
+    </div>
+
+    @* ─── アカウント一覧 ────────────────────────────────────────────── *@
+    <MudPaper Elevation="0"
+              Style="border:1px solid #e9ecef; border-radius:12px; overflow:hidden; margin-bottom:32px;">
+        @if (_users is null)
+        {
+            <div style="padding:40px; text-align:center;">
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+            </div>
+        }
+        else
+        {
+            <MudTable Items="_users"
+                      Hover="true"
+                      Dense="true"
+                      Breakpoint="Breakpoint.None"
+                      Style="border-radius:12px;">
+                <HeaderContent>
+                    <MudTh Style="font-size:11px; font-weight:700; color:#6c757d; text-transform:uppercase; padding:10px 16px;">ユーザー名</MudTh>
+                    <MudTh Style="font-size:11px; font-weight:700; color:#6c757d; text-transform:uppercase; padding:10px 16px;">表示名</MudTh>
+                    <MudTh Style="font-size:11px; font-weight:700; color:#6c757d; text-transform:uppercase; padding:10px 16px;">ロール</MudTh>
+                    <MudTh Style="font-size:11px; font-weight:700; color:#6c757d; text-transform:uppercase; padding:10px 16px;">ユーザープロフィール</MudTh>
+                    <MudTh Style="font-size:11px; font-weight:700; color:#6c757d; text-transform:uppercase; padding:10px 16px;">操作</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd Style="padding:10px 16px; font-family:monospace; font-size:13px; color:#343a40;">
+                        @context.UserName
+                        @if (context.UserName == _currentUserName)
+                        {
+                            <MudChip T="string" Size="Size.Small"
+                                     Style="background:#e3f2fd; color:#1565c0; font-size:10px; font-weight:600; height:18px; margin-left:6px;">
+                                あなた
+                            </MudChip>
+                        }
+                    </MudTd>
+                    <MudTd Style="padding:10px 16px; font-size:13px;">@context.DisplayName</MudTd>
+                    <MudTd Style="padding:10px 16px;">
+                        <MudChip T="string" Size="Size.Small"
+                                 Style="@($"background:{RoleColor(context.Role)}20; color:{RoleColor(context.Role)}; font-size:11px; font-weight:600; height:20px;")">
+                            @context.Role
+                        </MudChip>
+                    </MudTd>
+                    <MudTd Style="padding:10px 16px; font-size:12px; color:#6c757d; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                        @(string.IsNullOrWhiteSpace(context.PersonalPrompt) ? "—" : context.PersonalPrompt)
+                    </MudTd>
+                    <MudTd Style="padding:10px 16px;">
+                        <div style="display:flex; gap:4px;">
+                            @* ユーザープロフィール編集: 本人のみ *@
+                            @if (context.UserName == _currentUserName)
+                            {
+                                <MudTooltip Text="ユーザープロフィールを編集">
+                                    <MudIconButton Icon="@Icons.Material.Outlined.EditNote"
+                                                   Size="Size.Small"
+                                                   Color="Color.Primary"
+                                                   OnClick="@(() => OpenPromptDialog(context))" />
+                                </MudTooltip>
+                            }
+                            @* プロフィール編集・削除: Admin のみ（自分自身への削除は不可） *@
+                            @if (_isAdmin)
+                            {
+                                <MudTooltip Text="プロフィール編集">
+                                    <MudIconButton Icon="@Icons.Material.Outlined.Edit"
+                                                   Size="Size.Small"
+                                                   OnClick="@(() => OpenEditDialog(context))" />
+                                </MudTooltip>
+                                @if (context.UserName != _currentUserName)
+                                {
+                                    <MudTooltip Text="削除">
+                                        <MudIconButton Icon="@Icons.Material.Outlined.Delete"
+                                                       Size="Size.Small"
+                                                       Color="Color.Error"
+                                                       OnClick="@(() => ConfirmDelete(context))" />
+                                    </MudTooltip>
+                                }
+                            }
+                        </div>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+</div>
+
+@* ─── 新規作成ダイアログ ────────────────────────────────────────── *@
+<MudDialog @bind-Visible="_showCreateDialog" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6" Style="font-weight:700;">新規アカウント作成</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="_createForm" style="display:flex; flex-direction:column; gap:12px; min-width:360px;">
+            <MudTextField @bind-Value="_createModel.UserName"
+                          Label="ユーザー名（英数字・記号）"
+                          Required="true"
+                          RequiredError="必須です"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense" />
+            <MudTextField @bind-Value="_createModel.DisplayName"
+                          Label="表示名"
+                          Required="true"
+                          RequiredError="必須です"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense" />
+            <MudSelect @bind-Value="_createModel.Role"
+                       Label="業務ロール"
+                       Variant="Variant.Outlined"
+                       Margin="Margin.Dense">
+                @foreach (var r in _validRoles)
+                {
+                    <MudSelectItem Value="@r">@r</MudSelectItem>
+                }
+            </MudSelect>
+            <MudTextField @bind-Value="_createModel.Password"
+                          Label="パスワード"
+                          Required="true"
+                          RequiredError="必須です"
+                          InputType="InputType.Password"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _showCreateDialog = false)" Variant="Variant.Text">キャンセル</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveCreate" Disabled="_isSaving">
+            @(_isSaving ? "保存中..." : "作成")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@* ─── プロフィール編集ダイアログ ─────────────────────────────────── *@
+<MudDialog @bind-Visible="_showEditDialog" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6" Style="font-weight:700;">プロフィール編集: @_editModel.UserName</MudText>
+    </TitleContent>
+    <DialogContent>
+        <div style="display:flex; flex-direction:column; gap:12px; min-width:360px;">
+            <MudTextField @bind-Value="_editModel.DisplayName"
+                          Label="表示名"
+                          Required="true"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense" />
+            <MudSelect @bind-Value="_editModel.Role"
+                       Label="業務ロール"
+                       Variant="Variant.Outlined"
+                       Margin="Margin.Dense">
+                @foreach (var r in _validRoles)
+                {
+                    <MudSelectItem Value="@r">@r</MudSelectItem>
+                }
+            </MudSelect>
+            <MudDivider />
+            <MudText Typo="Typo.caption" Style="color:#6c757d;">パスワード変更（空欄で変更なし）</MudText>
+            <MudTextField @bind-Value="_editModel.NewPassword"
+                          Label="新しいパスワード"
+                          InputType="InputType.Password"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense" />
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _showEditDialog = false)" Variant="Variant.Text">キャンセル</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveEdit" Disabled="_isSaving">
+            @(_isSaving ? "保存中..." : "保存")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@* ─── パーソナルプロンプト編集ダイアログ ──────────────────────────── *@
+<MudDialog @bind-Visible="_showPromptDialog" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6" Style="font-weight:700;">ユーザープロフィール</MudText>
+    </TitleContent>
+    <DialogContent>
+        <div style="display:flex; flex-direction:column; gap:8px; min-width:420px;">
+            <MudText Typo="Typo.caption" Style="color:#6c757d;">
+                あなたが誰か・どんな業務を担当しているかを記入します。エージェントはこの情報を踏まえて回答をカスタマイズします。
+            </MudText>
+            <MudTextField @bind-Value="_promptEditValue"
+                          Label="ユーザープロフィール"
+                          Lines="6"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense"
+                          Placeholder="例: 関西エリア担当の営業。大手製造業への新規開拓が得意で与信交渉の経験が豊富。数字より関係性を重視する傾向がある。" />
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _showPromptDialog = false)" Variant="Variant.Text">キャンセル</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SavePrompt" Disabled="_isSaving">
+            @(_isSaving ? "保存中..." : "保存")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthStateTask { get; set; } = null!;
+
+    private static readonly string[] _validRoles = ["Admin", "Sales", "Purchasing", "Production", "Accounting"];
+
+    private IReadOnlyList<AppUser>? _users;
+    private string _currentUserName = "";
+    private bool _isAdmin;
+    private bool _isSaving;
+
+    // ダイアログ制御
+    private bool _showCreateDialog;
+    private bool _showEditDialog;
+    private bool _showPromptDialog;
+    private MudForm? _createForm;
+
+    private readonly DialogOptions _dialogOptions = new()
+    {
+        CloseOnEscapeKey = true,
+        CloseButton = true,
+        MaxWidth = MaxWidth.Small,
+        FullWidth = true,
+    };
+
+    // フォームモデル
+    private CreateModel  _createModel  = new();
+    private EditModel    _editModel    = new();
+    private string       _promptEditValue = "";
+    private string       _promptEditTarget = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateTask;
+        var user      = authState.User;
+        _currentUserName = user.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value ?? "";
+        _isAdmin         = user.FindFirst("opscontext_is_admin")?.Value == "true";
+
+        await ReloadUsersAsync();
+    }
+
+    private async Task ReloadUsersAsync()
+    {
+        _users = await UserStore.ListAsync();
+    }
+
+    // ─── ダイアログ開く ────────────────────────────────────────────────
+
+    private void OpenCreateDialog()
+    {
+        _createModel = new CreateModel { Role = "Sales" };
+        _showCreateDialog = true;
+    }
+
+    private void OpenEditDialog(AppUser user)
+    {
+        _editModel = new EditModel
+        {
+            UserName    = user.UserName,
+            DisplayName = user.DisplayName,
+            Role        = user.Role,
+            NewPassword = "",
+        };
+        _showEditDialog = true;
+    }
+
+    private void OpenPromptDialog(AppUser user)
+    {
+        _promptEditTarget = user.UserName;
+        _promptEditValue  = user.PersonalPrompt ?? "";
+        _showPromptDialog = true;
+    }
+
+    // ─── 保存処理 ──────────────────────────────────────────────────────
+
+    private async Task SaveCreate()
+    {
+        if (!_isAdmin) { Snackbar.Add("Admin 権限が必要です。", Severity.Error); return; }
+
+        await _createForm!.ValidateAsync();
+        if (!_createForm.IsValid) return;
+
+        _isSaving = true;
+        try
+        {
+            await UserStore.CreateAsync(
+                _createModel.UserName.Trim(),
+                _createModel.DisplayName.Trim(),
+                _createModel.Role,
+                _createModel.Password);
+
+            Snackbar.Add($"アカウント '{_createModel.UserName}' を作成しました。", Severity.Success);
+            _showCreateDialog = false;
+            await ReloadUsersAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"作成失敗: {ex.Message}", Severity.Error);
+        }
+        finally { _isSaving = false; }
+    }
+
+    private async Task SaveEdit()
+    {
+        if (!_isAdmin) { Snackbar.Add("Admin 権限が必要です。", Severity.Error); return; }
+
+        _isSaving = true;
+        try
+        {
+            await UserStore.UpdateProfileAsync(
+                _editModel.UserName,
+                _editModel.DisplayName.Trim(),
+                _editModel.Role);
+
+            if (!string.IsNullOrWhiteSpace(_editModel.NewPassword))
+                await UserStore.SetPasswordAsync(_editModel.UserName, _editModel.NewPassword);
+
+            Snackbar.Add($"アカウント '{_editModel.UserName}' を更新しました。", Severity.Success);
+            _showEditDialog = false;
+            await ReloadUsersAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"更新失敗: {ex.Message}", Severity.Error);
+        }
+        finally { _isSaving = false; }
+    }
+
+    private async Task SavePrompt()
+    {
+        if (_promptEditTarget != _currentUserName)
+        {
+            Snackbar.Add("パーソナルプロンプトは本人のみ編集できます。", Severity.Error);
+            return;
+        }
+
+        _isSaving = true;
+        try
+        {
+            await UserStore.UpdatePersonalPromptAsync(_promptEditTarget, _promptEditValue);
+            Snackbar.Add("パーソナルプロンプトを保存しました。", Severity.Success);
+            _showPromptDialog = false;
+            await ReloadUsersAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"保存失敗: {ex.Message}", Severity.Error);
+        }
+        finally { _isSaving = false; }
+    }
+
+    private async Task ConfirmDelete(AppUser user)
+    {
+        if (!_isAdmin) { Snackbar.Add("Admin 権限が必要です。", Severity.Error); return; }
+        if (user.UserName == _currentUserName) { Snackbar.Add("自分自身は削除できません。", Severity.Warning); return; }
+
+        _isSaving = true;
+        try
+        {
+            await UserStore.DeleteAsync(user.UserName);
+            Snackbar.Add($"アカウント '{user.UserName}' を削除しました。", Severity.Success);
+            await ReloadUsersAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"削除失敗: {ex.Message}", Severity.Error);
+        }
+        finally { _isSaving = false; }
+    }
+
+    // ─── ヘルパー ──────────────────────────────────────────────────────
+
+    private static string RoleColor(string role) => role switch
+    {
+        "Admin"      => "#6a1b9a",
+        "Sales"      => "#2e7d32",
+        "Purchasing" => "#e65100",
+        "Production" => "#1565c0",
+        "Accounting" => "#b71c1c",
+        _            => "#424242"
+    };
+
+    // ─── フォームモデル ────────────────────────────────────────────────
+
+    private sealed class CreateModel
+    {
+        public string UserName    { get; set; } = "";
+        public string DisplayName { get; set; } = "";
+        public string Role        { get; set; } = "Sales";
+        public string Password    { get; set; } = "";
+    }
+
+    private sealed class EditModel
+    {
+        public string UserName    { get; set; } = "";
+        public string DisplayName { get; set; } = "";
+        public string Role        { get; set; } = "Sales";
+        public string NewPassword { get; set; } = "";
+    }
+}

@@ -1,0 +1,945 @@
+@page "/data/{TableId}"
+@using OpsContext.Agents
+@using OpsContext.Agents.Models
+@using OpsContext.Agents.Tools
+@using OpsContext.Agents.Services
+@inject IDataGridStore GridStore
+@inject GridAgentService GridAgent
+@inject IContextStoreTool ContextStore
+@inject ICuratorQueue CuratorQueue
+@inject ICsvTool CsvTool
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@inject OpsContext.Web.Services.RoleStateService RoleState
+@inject NavigationManager Nav
+
+<PageTitle>OpsContext - 業務データ</PageTitle>
+
+<div style="display:flex; gap:20px; height:calc(100vh - 100px);">
+
+    @* ─── 左ペイン: 編集可能 Grid ──────────────────────────────────── *@
+    <div style="flex:1; min-width:0; display:flex; flex-direction:column; overflow:hidden;">
+
+        @* ヘッダー＋ツールバー *@
+        <MudPaper Elevation="0"
+                  Style="background:#ffffff; border:1px solid #e9ecef; border-radius:12px; padding:12px 16px; margin-bottom:12px;">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <MudTooltip Text="業務データ一覧へ">
+                    <MudIconButton Icon="@Icons.Material.Outlined.ArrowBack"
+                                   Size="Size.Small"
+                                   Style="color:#6c757d;"
+                                   OnClick="@(() => Nav.NavigateTo("/data"))" />
+                </MudTooltip>
+                <MudIcon Icon="@Icons.Material.Outlined.TableChart"
+                         Style="font-size:22px; color:#1565c0;" />
+                <MudText Typo="Typo.subtitle1"
+                         Style="font-weight:700; color:#1a1a2e; flex:1;">
+                    @(_table?.Name ?? "業務データ")
+                </MudText>
+
+                @* 行追加 *@
+                <MudButton Variant="Variant.Outlined"
+                           Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.AddCircleOutline"
+                           OnClick="AddRow"
+                           Style="border-radius:8px;">
+                    行追加
+                </MudButton>
+
+                @* 列追加 *@
+                <MudButton Variant="Variant.Outlined"
+                           Size="Size.Small"
+                           StartIcon="@Icons.Material.Outlined.ViewColumn"
+                           OnClick="OpenAddColumnDialog"
+                           Style="border-radius:8px;">
+                    列追加
+                </MudButton>
+
+                @* CSV取込 *@
+                <InputFile id="gridCsvInput" OnChange="OnCsvImport" accept=".csv" style="display:none;" />
+                <MudButton Variant="Variant.Outlined"
+                           Size="Size.Small"
+                           HtmlTag="label"
+                           StartIcon="@Icons.Material.Filled.UploadFile"
+                           for="gridCsvInput"
+                           Style="border-radius:8px;">
+                    CSV取込
+                </MudButton>
+
+                @* ダウンロード *@
+                <MudButton Variant="Variant.Outlined"
+                           Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Download"
+                           OnClick="DownloadCsv"
+                           Style="border-radius:8px;">
+                    CSVダウンロード
+                </MudButton>
+            </div>
+        </MudPaper>
+
+        @* Grid 本体 *@
+        <MudPaper Elevation="0"
+                  Style="background:#ffffff; border:1px solid #e9ecef; border-radius:12px; flex:1; overflow:auto;">
+            @if (_table is null)
+            {
+                <div style="display:flex; align-items:center; justify-content:center; height:200px;">
+                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+                </div>
+            }
+            else if (_table.Rows.Count == 0)
+            {
+                <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:200px; color:#adb5bd;">
+                    <MudIcon Icon="@Icons.Material.Outlined.TableRows"
+                             Style="font-size:48px; margin-bottom:12px;" />
+                    <MudText Typo="Typo.body2">データがありません。「行追加」か「CSV取込」でデータを追加してください。</MudText>
+                </div>
+            }
+            else
+            {
+                <div style="overflow-x:auto;">
+                    <table style="border-collapse:collapse; width:100%; font-size:13px;">
+                        <thead>
+                            <tr style="background:#f8f9fa; border-bottom:2px solid #e9ecef;">
+                                @foreach (var col in _table.Columns)
+                                {
+                                    <th style="padding:6px 10px; text-align:left; font-weight:600; color:#495057; white-space:nowrap; border-right:1px solid #e9ecef; min-width:100px;"
+                                        @onmouseenter="@(() => _hoveredColumn = col.Key)"
+                                        @onmouseleave="@(() => _hoveredColumn = null)">
+                                        <div style="display:flex; align-items:center; gap:4px;">
+                                            <span>@col.Label</span>
+                                            <span style="font-size:10px; color:#adb5bd; font-weight:400;">(@col.Type)</span>
+                                            @if (_hoveredColumn == col.Key)
+                                            {
+                                                <MudIconButton Icon="@Icons.Material.Outlined.EditNote"
+                                                               Size="Size.Small"
+                                                               Style="padding:2px; width:20px; height:20px; color:#1565c0;"
+                                                               OnClick="@(() => OpenEditDescriptionDialog(col))" />
+                                                <MudIconButton Icon="@Icons.Material.Outlined.DeleteOutline"
+                                                               Size="Size.Small"
+                                                               Style="padding:2px; width:20px; height:20px; color:#b71c1c;"
+                                                               OnClick="@(() => DeleteColumn(col.Key))" />
+                                            }
+                                        </div>
+                                        @if (!string.IsNullOrWhiteSpace(col.Description))
+                                        {
+                                            <div style="font-size:10px; color:#6c757d; font-weight:400; white-space:normal; max-width:160px; line-height:1.3; margin-top:2px;">
+                                                @col.Description
+                                            </div>
+                                        }
+                                    </th>
+                                }
+                                <th style="width:40px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _table.Rows)
+                            {
+                                <tr style="border-bottom:1px solid #e9ecef;"
+                                    @onmouseenter="@(() => _hoveredRow = row.RowId)"
+                                    @onmouseleave="@(() => _hoveredRow = null)">
+                                    @foreach (var col in _table.Columns)
+                                    {
+                                        <td style="padding:4px 8px; border-right:1px solid #f0f0f0; vertical-align:middle;">
+                                            @RenderCell(row, col)
+                                        </td>
+                                    }
+                                    <td style="padding:4px; text-align:center; vertical-align:middle;">
+                                        @if (_hoveredRow == row.RowId)
+                                        {
+                                            <MudIconButton Icon="@Icons.Material.Outlined.DeleteOutline"
+                                                           Size="Size.Small"
+                                                           Color="Color.Error"
+                                                           OnClick="@(() => DeleteRow(row.RowId))" />
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </MudPaper>
+    </div>
+
+    @* ─── 右ペイン: AI エージェント ─────────────────────────────────── *@
+    <div style="width:400px; flex-shrink:0; display:flex; flex-direction:column; gap:12px; overflow:hidden;">
+
+        @* チャット履歴 *@
+        <MudPaper Elevation="0"
+                  Style="background:#ffffff; border:1px solid #e9ecef; border-radius:12px; flex:1; display:flex; flex-direction:column; overflow:hidden; min-height:220px;">
+
+            <div style="background:#f8f9fa; border-bottom:1px solid #e9ecef; padding:10px 14px; display:flex; align-items:center; gap:8px;">
+                <MudIcon Icon="@Icons.Material.Outlined.SmartToy"
+                         Style="font-size:18px; color:#1565c0;" />
+                <MudText Typo="Typo.subtitle2" Style="font-weight:600; color:#495057;">
+                    AI エージェント
+                </MudText>
+                <MudChip T="string"
+                         Size="Size.Small"
+                         Style="background:#e3f2fd; color:#1565c0; font-size:10px; height:18px; margin-left:auto;">
+                    @RoleState.CurrentRole
+                </MudChip>
+            </div>
+
+            @* メッセージ履歴 *@
+            <div style="flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:10px;"
+                 id="grid-chat-history">
+
+                @if (_chatHistory.Count == 0)
+                {
+                    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:#adb5bd; padding:24px;">
+                        <MudIcon Icon="@Icons.Material.Outlined.Chat"
+                                 Style="font-size:36px; margin-bottom:12px; color:#dee2e6;" />
+                        <MudText Typo="Typo.body2" Style="text-align:center; line-height:1.8; font-size:12px;">
+                            AI が自分でデータ構造と基幹を読み解き、編集を提案します<br/>
+                            例: 「この見積を基幹と突合して、問題があれば直して」<br/>
+                            「在庫が足りない行に印を付けて」<br/>
+                            「備考列を追加して理由を書いて」
+                        </MudText>
+                    </div>
+                }
+
+                @foreach (var turn in _chatHistory)
+                {
+                    if (turn.IsUser)
+                    {
+                        <div style="display:flex; justify-content:flex-end;">
+                            <div style="background:#1565c0; color:#ffffff; padding:8px 12px; border-radius:12px 12px 2px 12px; font-size:12px; line-height:1.6; max-width:90%; white-space:pre-wrap;">
+                                @turn.Text
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div style="display:flex; gap:6px; align-items:flex-start;">
+                            <div style="flex-shrink:0; width:24px; height:24px; border-radius:50%; background:#e3f2fd; display:flex; align-items:center; justify-content:center;">
+                                <MudIcon Icon="@Icons.Material.Filled.SmartToy"
+                                         Style="font-size:13px; color:#1565c0;" />
+                            </div>
+                            <div style="background:#f8f9fa; border:1px solid #e9ecef; padding:8px 12px; border-radius:2px 12px 12px 12px; font-size:12px; line-height:1.6; max-width:90%; white-space:pre-wrap;">
+                                @turn.Text
+                            </div>
+                        </div>
+                    }
+                }
+
+                @if (_isBusy)
+                {
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Primary" />
+                        <MudText Typo="Typo.caption" Style="color:#6c757d; font-style:italic;">
+                            エージェント実行中...
+                        </MudText>
+                    </div>
+                }
+            </div>
+
+            @* 入力エリア *@
+            <div style="border-top:1px solid #e9ecef; padding:10px;">
+                <MudTextField @bind-Value="_userMessage"
+                              Placeholder="AI への指示を入力... (Enter で送信)"
+                              Variant="Variant.Outlined"
+                              Lines="2"
+                              Immediate="true"
+                              OnKeyDown="OnChatKeyDown"
+                              Disabled="_isBusy"
+                              Style="margin-bottom:8px; font-size:13px;" />
+                <div style="display:flex; gap:6px;">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Size="Size.Small"
+                               OnClick="SendChat"
+                               Disabled="@(_isBusy || string.IsNullOrWhiteSpace(_userMessage))"
+                               StartIcon="@Icons.Material.Filled.Send"
+                               Style="border-radius:8px; font-weight:600;">
+                        送信
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Success"
+                               Size="Size.Small"
+                               OnClick="ConfirmDecision"
+                               Disabled="@(_isBusy || _chatHistory.Count == 0)"
+                               StartIcon="@Icons.Material.Filled.CheckCircle"
+                               Style="border-radius:8px; font-weight:600;">
+                        コンテキストに保存
+                    </MudButton>
+                </div>
+            </div>
+        </MudPaper>
+
+        @* 編集提案（承認待ち） *@
+        @if (_pendingEdits.Count > 0)
+        {
+            <MudPaper Elevation="0"
+                      Style="background:#ffffff; border:1px solid #ffe0b2; border-radius:12px; max-height:300px; overflow-y:auto;">
+                <div style="background:#fff8e1; border-bottom:1px solid #ffe0b2; padding:8px 14px; display:flex; align-items:center; gap:8px;">
+                    <MudIcon Icon="@Icons.Material.Outlined.RateReview"
+                             Style="font-size:16px; color:#f9a825;" />
+                    <MudText Typo="Typo.caption" Style="font-weight:700; color:#e65100;">
+                        編集提案（承認待ち）
+                    </MudText>
+                    <MudChip T="string" Size="Size.Small"
+                             Style="background:#ffe0b2; color:#e65100; font-size:10px; height:18px;">
+                        @_pendingEdits.Count
+                    </MudChip>
+                    <div style="margin-left:auto; display:flex; gap:4px;">
+                        <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small"
+                                   OnClick="ApproveAll" Disabled="_isBusy"
+                                   Style="border-radius:6px; font-size:11px; min-width:0; padding:2px 10px;">
+                            すべて承認
+                        </MudButton>
+                        <MudButton Variant="Variant.Text" Color="Color.Error" Size="Size.Small"
+                                   OnClick="RejectAll" Disabled="_isBusy"
+                                   Style="border-radius:6px; font-size:11px; min-width:0; padding:2px 10px;">
+                            すべて却下
+                        </MudButton>
+                    </div>
+                </div>
+
+                @foreach (var edit in _pendingEdits)
+                {
+                    <div style="padding:10px 14px; border-bottom:1px solid #f5f5f5;">
+                        <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+                            <MudIcon Icon="@EditKindIcon(edit.Kind)" Style="@($"font-size:15px; color:{EditKindColor(edit.Kind)};")" />
+                            <MudText Typo="Typo.caption" Style="font-weight:600; color:#495057;">
+                                @EditKindLabel(edit.Kind)
+                            </MudText>
+                        </div>
+                        <MudText Typo="Typo.caption" Style="color:#6c757d; line-height:1.5; display:block; margin-bottom:6px;">
+                            @edit.Summary
+                        </MudText>
+
+                        @if (edit.Kind == PendingEditKind.SetCell)
+                        {
+                            <div style="display:flex; align-items:center; gap:6px; font-size:12px; margin-bottom:8px;">
+                                <span style="background:#fce4ec; color:#b71c1c; padding:2px 8px; border-radius:4px; text-decoration:line-through;">
+                                    @(string.IsNullOrEmpty(edit.Before) ? "（空）" : edit.Before)
+                                </span>
+                                <MudIcon Icon="@Icons.Material.Filled.ArrowForward" Style="font-size:14px; color:#adb5bd;" />
+                                <span style="background:#e8f5e9; color:#2e7d32; padding:2px 8px; border-radius:4px; font-weight:600;">
+                                    @(string.IsNullOrEmpty(edit.After) ? "（空）" : edit.After)
+                                </span>
+                            </div>
+                        }
+
+                        <div style="display:flex; gap:6px;">
+                            <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small"
+                                       OnClick="@(() => ApproveEdit(edit))" Disabled="_isBusy"
+                                       StartIcon="@Icons.Material.Filled.Check"
+                                       Style="border-radius:6px; font-size:11px; min-width:0; padding:2px 12px;">
+                                承認
+                            </MudButton>
+                            <MudButton Variant="Variant.Text" Color="Color.Error" Size="Size.Small"
+                                       OnClick="@(() => RejectEdit(edit))" Disabled="_isBusy"
+                                       StartIcon="@Icons.Material.Filled.Close"
+                                       Style="border-radius:6px; font-size:11px; min-width:0; padding:2px 12px;">
+                                却下
+                            </MudButton>
+                        </div>
+                    </div>
+                }
+            </MudPaper>
+        }
+
+        @* エージェント実行ステップ（タイムライン） *@
+        @if (_activities.Count > 0)
+        {
+            <MudPaper Elevation="0"
+                      Style="background:#ffffff; border:1px solid #e9ecef; border-radius:12px; max-height:320px; overflow-y:auto;">
+                <div style="background:#f8f9fa; border-bottom:1px solid #e9ecef; padding:8px 14px; display:flex; align-items:center; gap:8px;">
+                    <MudIcon Icon="@Icons.Material.Outlined.AccountTree"
+                             Style="font-size:16px; color:#6c757d;" />
+                    <MudText Typo="Typo.caption" Style="font-weight:600; color:#495057;">
+                        エージェント実行ステップ
+                    </MudText>
+                    <MudChip T="string" Size="Size.Small"
+                             Style="background:#e3f2fd; color:#1565c0; font-size:10px; height:18px; margin-left:auto;">
+                        @_activities.Count
+                    </MudChip>
+                </div>
+
+                <div style="position:relative; padding:8px 0;">
+                    @foreach (var act in _activities)
+                    {
+                        <div style="display:flex; gap:8px; padding:6px 14px; align-items:flex-start;">
+                            <div style="@($"flex-shrink:0; width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin-top:1px; background:{ActivityBg(act)};")">
+                                @if (act.Status == ActivityStatus.Running)
+                                {
+                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Primary"
+                                                         Style="width:14px; height:14px;" />
+                                }
+                                else
+                                {
+                                    <MudIcon Icon="@ActivityIcon(act)" Style="@($"font-size:13px; color:{ActivityColor(act)};")" />
+                                }
+                            </div>
+                            <div style="flex:1; min-width:0;">
+                                <MudText Typo="Typo.caption" Style="@($"font-weight:600; color:{(act.Status == ActivityStatus.Failed ? "#b71c1c" : "#343a40")}; line-height:1.4;")">
+                                    @act.Title
+                                </MudText>
+                                @if (!string.IsNullOrEmpty(act.ResultMarkdown) && act.Kind == ActivityKind.ToolCall)
+                                {
+                                    <details style="margin-top:2px;">
+                                        <summary style="font-size:10px; color:#1565c0; cursor:pointer;">結果を表示</summary>
+                                        <pre style="white-space:pre-wrap; font-size:10px; color:#495057; background:#f8f9fa; border-radius:4px; padding:6px; margin-top:4px; overflow-x:auto;">@act.ResultMarkdown</pre>
+                                    </details>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </MudPaper>
+        }
+    </div>
+</div>
+
+@* 列説明編集ダイアログ *@
+@if (_showEditDescriptionDialog)
+{
+    <MudOverlay Visible="true" DarkBackground="true" AutoClose="false" />
+    <div style="position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:1000; width:420px;">
+        <MudPaper Elevation="4" Style="border-radius:12px; overflow:hidden;">
+            <div style="background:#1565c0; padding:14px 18px; display:flex; align-items:center; gap:8px;">
+                <MudIcon Icon="@Icons.Material.Outlined.EditNote" Style="color:#ffffff;" />
+                <MudText Typo="Typo.subtitle1" Style="color:#ffffff; font-weight:600;">
+                    列の意味を登録 — @_editDescriptionColumnLabel
+                </MudText>
+            </div>
+            <div style="padding:20px;">
+                <MudText Typo="Typo.caption" Style="color:#6c757d; margin-bottom:8px; display:block; line-height:1.6;">
+                    この列がどのようなデータを表すか説明してください。<br />
+                    AIがデータを理解する際の手がかりになります。
+                </MudText>
+                <MudTextField @bind-Value="_editDescriptionValue"
+                              Label="列の意味・説明"
+                              Variant="Variant.Outlined"
+                              Lines="3"
+                              Placeholder="例: ERP品目マスタの主キー。英大文字+ハイフン+3桁数字の形式（例: 弁P-101）。"
+                              Style="margin-bottom:16px;" />
+                <div style="display:flex; gap:8px; justify-content:flex-end;">
+                    <MudButton Variant="Variant.Text"
+                               OnClick="@(() => _showEditDescriptionDialog = false)">
+                        キャンセル
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               OnClick="ConfirmEditDescription">
+                        保存
+                    </MudButton>
+                </div>
+            </div>
+        </MudPaper>
+    </div>
+}
+
+@* 列追加ダイアログ *@
+@if (_showAddColumnDialog)
+{
+    <MudOverlay Visible="true" DarkBackground="true" AutoClose="false" />
+    <div style="position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:1000; width:340px;">
+        <MudPaper Elevation="4" Style="border-radius:12px; overflow:hidden;">
+            <div style="background:#1565c0; padding:14px 18px;">
+                <MudText Typo="Typo.subtitle1" Style="color:#ffffff; font-weight:600;">列を追加</MudText>
+            </div>
+            <div style="padding:20px;">
+                <MudTextField @bind-Value="_newColumnLabel"
+                              Label="列名"
+                              Variant="Variant.Outlined"
+                              Style="margin-bottom:12px;" />
+                <MudSelect T="string"
+                           @bind-Value="_newColumnType"
+                           Label="型"
+                           Variant="Variant.Outlined"
+                           Style="margin-bottom:16px;">
+                    <MudSelectItem Value="@("Text")">テキスト</MudSelectItem>
+                    <MudSelectItem Value="@("Number")">数値</MudSelectItem>
+                    <MudSelectItem Value="@("Date")">日付</MudSelectItem>
+                </MudSelect>
+                <div style="display:flex; gap:8px; justify-content:flex-end;">
+                    <MudButton Variant="Variant.Text"
+                               OnClick="@(() => _showAddColumnDialog = false)">
+                        キャンセル
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               OnClick="ConfirmAddColumn">
+                        追加
+                    </MudButton>
+                </div>
+            </div>
+        </MudPaper>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public string TableId { get; set; } = "";
+
+    private string _caseId = "";
+    private GridTable? _table;
+    private string? _hoveredRow;
+    private bool _isBusy;
+    private string _userMessage = "";
+    private List<ChatTurn> _chatHistory = [];
+    private List<AgentActivity> _activities = [];
+    private List<PendingEdit> _pendingEdits = [];
+
+    // 列ホバー
+    private string? _hoveredColumn;
+
+    // 列追加ダイアログ
+    private bool _showAddColumnDialog;
+    private string _newColumnLabel = "";
+    private string _newColumnType  = "Text";
+
+    // 列説明編集ダイアログ
+    private bool   _showEditDescriptionDialog;
+    private string _editDescriptionColumnKey   = "";
+    private string _editDescriptionColumnLabel = "";
+    private string _editDescriptionValue       = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await GridStore.SeedSampleAsync();
+
+        // TableId で指定されたテーブルをアクティブにする
+        if (!string.IsNullOrEmpty(TableId) && GridStore.GetTable(TableId) is not null)
+        {
+            GridStore.SetActiveTable(TableId);
+        }
+        else if (!string.IsNullOrEmpty(TableId))
+        {
+            // 不正な TableId → 一覧へリダイレクト
+            Nav.NavigateTo("/data");
+            return;
+        }
+
+        // コンテキスト記録は業務データ (TableId) 単位
+        _caseId = TableId;
+        _table  = GridStore.GetActiveTable();
+    }
+
+    // ─── Grid 操作（人間の直接操作。即時適用） ────────────────────────────
+
+    private void AddRow()
+    {
+        GridStore.AddRow();
+        _table = GridStore.GetActiveTable();
+    }
+
+    private void DeleteRow(string rowId)
+    {
+        GridStore.DeleteRow(rowId);
+        _table = GridStore.GetActiveTable();
+    }
+
+    private void OpenAddColumnDialog()
+    {
+        _newColumnLabel = "";
+        _newColumnType  = "Text";
+        _showAddColumnDialog = true;
+    }
+
+    private void DeleteColumn(string columnKey)
+    {
+        GridStore.DeleteColumn(columnKey);
+        _table = GridStore.GetActiveTable();
+    }
+
+    private void OpenEditDescriptionDialog(GridColumn col)
+    {
+        _editDescriptionColumnKey   = col.Key;
+        _editDescriptionColumnLabel = col.Label;
+        _editDescriptionValue       = col.Description;
+        _showEditDescriptionDialog  = true;
+    }
+
+    private void ConfirmEditDescription()
+    {
+        GridStore.UpdateColumnDescription(_editDescriptionColumnKey, _editDescriptionValue.Trim());
+        _table = GridStore.GetActiveTable();
+        _showEditDescriptionDialog = false;
+    }
+
+    private void ConfirmAddColumn()
+    {
+        if (string.IsNullOrWhiteSpace(_newColumnLabel)) return;
+        var type = _newColumnType switch
+        {
+            "Number" => GridColumnType.Number,
+            "Date"   => GridColumnType.Date,
+            _        => GridColumnType.Text
+        };
+        var key = _newColumnLabel.ToLowerInvariant()
+            .Replace(" ", "_").Replace("　", "_")
+            .Replace("（", "").Replace("）", "");
+        GridStore.AddColumn(new GridColumn(key, _newColumnLabel, type));
+        _table = GridStore.GetActiveTable();
+        _showAddColumnDialog = false;
+    }
+
+    private void UpdateCell(string rowId, string columnKey, object? value)
+    {
+        GridStore.UpdateCell(rowId, columnKey, value);
+    }
+
+    private async Task OnCsvImport(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null) return;
+        try
+        {
+            await using var stream = file.OpenReadStream(10 * 1024 * 1024);
+            var lines = CsvTool.ParseQuoteLines(stream);
+            if (lines.Count == 0)
+            {
+                Snackbar.Add("読み込めるデータがありませんでした", Severity.Warning);
+                return;
+            }
+
+            var newTable = new GridTable
+            {
+                Name    = System.IO.Path.GetFileNameWithoutExtension(file.Name),
+                Columns =
+                [
+                    new("product_code", "品番",         GridColumnType.Text),
+                    new("product_name", "品名",         GridColumnType.Text),
+                    new("qty",          "数量",         GridColumnType.Number),
+                    new("unit_price",   "単価（円）",   GridColumnType.Number),
+                    new("req_date",     "希望納期",     GridColumnType.Date),
+                    new("verdict",      "判定",         GridColumnType.Text),
+                    new("risk",         "リスク",       GridColumnType.Text),
+                    new("recommend",    "推奨アクション", GridColumnType.Text),
+                ]
+            };
+            foreach (var line in lines)
+            {
+                var row = new GridRow();
+                row.Cells["product_code"] = line.ProductCode;
+                row.Cells["product_name"] = line.ProductName;
+                row.Cells["qty"]          = line.Qty;
+                row.Cells["unit_price"]   = line.UnitPrice;
+                row.Cells["req_date"]     = line.RequestedDate.ToString("yyyy-MM-dd");
+                row.Cells["verdict"]      = "";
+                row.Cells["risk"]         = "";
+                row.Cells["recommend"]    = "";
+                newTable.Rows.Add(row);
+            }
+            GridStore.ReplaceTable(newTable);
+            _table = GridStore.GetActiveTable();
+            Snackbar.Add($"{lines.Count}行を読み込みました", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"取込エラー: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task DownloadCsv()
+    {
+        if (_table is null) return;
+        try
+        {
+            var lines = _table.Rows.Select(row =>
+            {
+                var line = new OpsContext.Agents.Models.QuoteLine
+                {
+                    ProductCode   = CellStr(row, "product_code"),
+                    ProductName   = CellStr(row, "product_name"),
+                    Qty           = CellInt(row,  "qty"),
+                    UnitPrice     = CellDec(row,  "unit_price"),
+                    RequestedDate = CellDate(row, "req_date"),
+                };
+                var verdictStr = CellStr(row, "verdict");
+                if (Enum.TryParse<OpsContext.Agents.Models.Verdict>(verdictStr, out var v))
+                    line.Verdict = v;
+                line.RiskLevel       = CellStr(row, "risk");
+                line.Recommendation  = CellStr(row, "recommend");
+                return line;
+            }).ToList();
+
+            var bytes   = CsvTool.ExportWithVerdicts(lines);
+            var base64  = Convert.ToBase64String(bytes);
+            var filename = $"{_table.Name}_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+            await JS.InvokeVoidAsync("saveAsFile", filename, base64);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"ダウンロードエラー: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // ─── AI エージェント ─────────────────────────────────────────────────
+
+    private async Task OnChatKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey && !string.IsNullOrWhiteSpace(_userMessage))
+            await SendChat();
+    }
+
+    private async Task SendChat()
+    {
+        if (string.IsNullOrWhiteSpace(_userMessage) || _isBusy) return;
+        await SendChatInternal(_userMessage.Trim());
+        _userMessage = "";
+    }
+
+    private async Task SendChatInternal(string message)
+    {
+        _chatHistory.Add(new ChatTurn(message, true));
+        _activities = [];
+        _isBusy = true;
+        StateHasChanged();
+
+        // 実行ステップをリアルタイムに反映（同一 Step は置換）
+        var progress = new Progress<AgentActivity>(a =>
+        {
+            var idx = _activities.FindIndex(x => x.Step == a.Step);
+            if (idx >= 0) _activities[idx] = a;
+            else _activities.Add(a);
+            InvokeAsync(StateHasChanged);
+        });
+
+        try
+        {
+            var result = await GridAgent.HandleAsync(
+                _caseId, RoleState.CurrentRole, message, progress, CancellationToken.None);
+
+            _chatHistory.Add(new ChatTurn(result.Reply, false));
+
+            // 提案をマージ（既存に追記）
+            _pendingEdits.AddRange(result.PendingEdits);
+
+            if (result.PendingEdits.Count > 0)
+                Snackbar.Add($"{result.PendingEdits.Count} 件の編集提案があります。承認してください。", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"AIエラー: {ex.Message}", Severity.Error);
+            _chatHistory.Add(new ChatTurn($"（エラー）{ex.Message}", false));
+        }
+        finally
+        {
+            _isBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    // ─── 編集提案の承認・却下 ─────────────────────────────────────────────
+
+    private async Task ApproveEdit(PendingEdit edit)
+    {
+        try
+        {
+            await GridAgent.ApplyEditAsync(_caseId, RoleState.CurrentRole, edit, CancellationToken.None);
+            _pendingEdits.Remove(edit);
+            _table = GridStore.GetActiveTable();
+            Snackbar.Add("変更を適用しました", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"適用エラー: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ApproveAll()
+    {
+        var snapshot = _pendingEdits.ToList();
+        foreach (var edit in snapshot)
+        {
+            try
+            {
+                await GridAgent.ApplyEditAsync(_caseId, RoleState.CurrentRole, edit, CancellationToken.None);
+                _pendingEdits.Remove(edit);
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"適用エラー: {ex.Message}", Severity.Error);
+            }
+        }
+        _table = GridStore.GetActiveTable();
+        Snackbar.Add($"{snapshot.Count} 件の変更を適用しました", Severity.Success);
+    }
+
+    private void RejectEdit(PendingEdit edit)
+    {
+        _pendingEdits.Remove(edit);
+    }
+
+    private void RejectAll()
+    {
+        _pendingEdits.Clear();
+    }
+
+    private async Task ConfirmDecision()
+    {
+        try
+        {
+            var summary = _chatHistory.Count > 0
+                ? _chatHistory.LastOrDefault(t => !t.IsUser)?.Text ?? "（AI アシスト）"
+                : "（Grid 操作決定）";
+
+            await ContextStore.AppendDecisionAsync(
+                _caseId, RoleState.CurrentRole, "user", summary, CancellationToken.None);
+
+            var turns = _chatHistory.TakeLast(6)
+                .Select(t => (t.IsUser ? "ユーザー" : "AI", t.Text))
+                .ToList();
+            var evt = new OpsContext.Agents.Models.ConversationEvent(
+                _caseId, RoleState.CurrentRole, "user",
+                turns.AsReadOnly(), DateTimeOffset.UtcNow);
+            CuratorQueue.Enqueue(evt);
+
+            Snackbar.Add("決定を記録しました", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"記録エラー: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // ─── セルレンダリング ─────────────────────────────────────────────────
+
+    private RenderFragment RenderCell(GridRow row, GridColumn col) => builder =>
+    {
+        var valStr = row.Cells.TryGetValue(col.Key, out var v) ? v?.ToString() ?? "" : "";
+
+        if (col.Key == "verdict")
+        {
+            var color = valStr switch
+            {
+                "OK"      => "#2e7d32",
+                "Warning" => "#f9a825",
+                "NG"      => "#b71c1c",
+                _         => "#6c757d"
+            };
+            builder.OpenComponent<MudBlazor.MudSelect<string>>(0);
+            builder.AddAttribute(1, "Value", valStr);
+            builder.AddAttribute(2, "ValueChanged",
+                EventCallback.Factory.Create<string>(this,
+                    v2 => { row.Cells[col.Key] = v2; UpdateCell(row.RowId, col.Key, v2); }));
+            builder.AddAttribute(3, "Variant", MudBlazor.Variant.Text);
+            builder.AddAttribute(4, "Margin", MudBlazor.Margin.None);
+            builder.AddAttribute(5, "Style", $"min-width:90px; font-size:13px; font-weight:600; color:{color};");
+            builder.AddAttribute(6, "ChildContent", (RenderFragment)(b2 =>
+            {
+                foreach (var opt in new[] { "", "OK", "Warning", "NG" })
+                {
+                    var optColor = opt switch
+                    {
+                        "OK"      => "#2e7d32",
+                        "Warning" => "#f9a825",
+                        "NG"      => "#b71c1c",
+                        _         => "#6c757d"
+                    };
+                    b2.OpenComponent<MudBlazor.MudSelectItem<string>>(0);
+                    b2.AddAttribute(1, "Value", opt);
+                    b2.AddAttribute(2, "Style", $"color:{optColor}; font-weight:600; font-size:13px;");
+                    b2.AddAttribute(3, "ChildContent", (RenderFragment)(b3 =>
+                        b3.AddContent(0, string.IsNullOrEmpty(opt) ? "—" : opt)));
+                    b2.CloseComponent();
+                }
+            }));
+            builder.CloseComponent();
+            return;
+        }
+
+        var maxWidth = col.Type == GridColumnType.Number ? "max-width:100px;"
+                     : col.Type == GridColumnType.Date   ? "max-width:130px;"
+                     : "min-width:80px;";
+
+        builder.OpenComponent<MudBlazor.MudTextField<string>>(0);
+        builder.AddAttribute(1, "Value", valStr);
+        builder.AddAttribute(2, "ValueChanged",
+            EventCallback.Factory.Create<string>(this,
+                v2 => { row.Cells[col.Key] = v2; UpdateCell(row.RowId, col.Key, v2); }));
+        builder.AddAttribute(3, "Variant", MudBlazor.Variant.Text);
+        builder.AddAttribute(4, "Margin", MudBlazor.Margin.None);
+        builder.AddAttribute(5, "Style", $"{maxWidth} font-size:13px;");
+        builder.CloseComponent();
+    };
+
+    // ─── ヘルパ ──────────────────────────────────────────────────────────
+
+    private static string CellStr(GridRow row, string key)
+        => row.Cells.TryGetValue(key, out var v) ? v?.ToString() ?? "" : "";
+
+    private static int CellInt(GridRow row, string key)
+        => int.TryParse(CellStr(row, key), out var i) ? i : 0;
+
+    private static decimal CellDec(GridRow row, string key)
+        => decimal.TryParse(CellStr(row, key), out var d) ? d : 0m;
+
+    private static DateOnly CellDate(GridRow row, string key)
+        => DateOnly.TryParse(CellStr(row, key), out var dt)
+            ? dt
+            : DateOnly.FromDateTime(DateTime.Today.AddDays(30));
+
+    // ─── 実行ステップ表示ヘルパ ────────────────────────────────────────────
+
+    private static string ActivityIcon(AgentActivity a) => a.Status == ActivityStatus.Failed
+        ? Icons.Material.Filled.ErrorOutline
+        : a.Kind switch
+        {
+            ActivityKind.Reasoning => Icons.Material.Filled.Psychology,
+            ActivityKind.ToolCall  => Icons.Material.Filled.Build,
+            ActivityKind.Proposal  => Icons.Material.Filled.EditNote,
+            ActivityKind.Final     => Icons.Material.Filled.CheckCircle,
+            ActivityKind.Error     => Icons.Material.Filled.ErrorOutline,
+            _                      => Icons.Material.Filled.FiberManualRecord
+        };
+
+    private static string ActivityColor(AgentActivity a) => a.Status == ActivityStatus.Failed
+        ? "#b71c1c"
+        : a.Kind switch
+        {
+            ActivityKind.Reasoning => "#6a1b9a",
+            ActivityKind.ToolCall  => "#1565c0",
+            ActivityKind.Proposal  => "#e65100",
+            ActivityKind.Final     => "#2e7d32",
+            ActivityKind.Error     => "#b71c1c",
+            _                      => "#6c757d"
+        };
+
+    private static string ActivityBg(AgentActivity a) => a.Status == ActivityStatus.Failed
+        ? "#fce4ec"
+        : a.Kind switch
+        {
+            ActivityKind.Reasoning => "#f3e5f5",
+            ActivityKind.ToolCall  => "#e3f2fd",
+            ActivityKind.Proposal  => "#fff3e0",
+            ActivityKind.Final     => "#e8f5e9",
+            ActivityKind.Error     => "#fce4ec",
+            _                      => "#f5f5f5"
+        };
+
+    private static string EditKindLabel(PendingEditKind k) => k switch
+    {
+        PendingEditKind.SetCell                 => "セル更新",
+        PendingEditKind.AddRow                  => "行追加",
+        PendingEditKind.AddColumn               => "列追加",
+        PendingEditKind.DeleteRow               => "行削除",
+        PendingEditKind.DeleteColumn            => "列削除",
+        PendingEditKind.UpdateColumnDescription => "列の意味更新",
+        _                                       => k.ToString()
+    };
+
+    private static string EditKindIcon(PendingEditKind k) => k switch
+    {
+        PendingEditKind.SetCell      => Icons.Material.Filled.EditNote,
+        PendingEditKind.AddRow       => Icons.Material.Filled.AddCircleOutline,
+        PendingEditKind.AddColumn    => Icons.Material.Outlined.ViewColumn,
+        PendingEditKind.DeleteRow    => Icons.Material.Filled.RemoveCircleOutline,
+        PendingEditKind.DeleteColumn => Icons.Material.Outlined.ViewColumn,
+        _                            => Icons.Material.Filled.Edit
+    };
+
+    private static string EditKindColor(PendingEditKind k) => k switch
+    {
+        PendingEditKind.DeleteRow or PendingEditKind.DeleteColumn => "#b71c1c",
+        PendingEditKind.AddRow or PendingEditKind.AddColumn       => "#2e7d32",
+        _                                                         => "#e65100"
+    };
+
+    private sealed record ChatTurn(string Text, bool IsUser);
+}

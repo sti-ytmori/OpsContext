@@ -1,0 +1,13 @@
+**/bin/
+**/obj/
+**/appsettings.Development.json
+**/appsettings.Local.json
+.vs/
+.idea/
+.git/
+**/*.user
+**/*.suo
+tools/
+dev/
+_memo/
+"Curia(参考)/"

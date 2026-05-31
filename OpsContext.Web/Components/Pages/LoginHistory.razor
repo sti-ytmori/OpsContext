@@ -1,0 +1,111 @@
+@page "/login-history"
+@attribute [Authorize(Policy = "AdminOnly")]
+@layout OpsContext.Web.Components.Layout.MainLayout
+@using OpsContext.Web.Services
+@using Microsoft.AspNetCore.Authorization
+@inject ILoginHistoryStore LoginHistoryStore
+
+<PageTitle>OpsContext - ログイン履歴</PageTitle>
+
+<div style="max-width:1100px; margin:0 auto;">
+
+    @* ─── ヘッダー ─────────────────────────────────────────────────── *@
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:24px; flex-wrap:wrap;">
+        <div style="width:44px; height:44px; border-radius:12px; background:#e3f2fd; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+            <MudIcon Icon="@Icons.Material.Outlined.History" Style="font-size:24px; color:#1565c0;" />
+        </div>
+        <div style="flex:1; min-width:0;">
+            <MudText Typo="Typo.h6" Style="font-weight:700; color:#1a1a2e; line-height:1.2;">
+                ログイン履歴
+            </MudText>
+            <MudText Typo="Typo.caption" Style="color:#6c757d;">
+                直近 @(_entries?.Count ?? 0) 件のログイン試行（成功・失敗）を表示しています。
+            </MudText>
+        </div>
+        <MudIconButton Icon="@Icons.Material.Outlined.Refresh"
+                       title="更新"
+                       Size="Size.Small"
+                       Style="color:#6c757d;"
+                       OnClick="ReloadAsync" />
+    </div>
+
+    @* ─── 履歴テーブル ──────────────────────────────────────────────── *@
+    <MudPaper Elevation="0"
+              Style="border:1px solid #e9ecef; border-radius:12px; overflow:hidden;">
+        @if (_entries is null)
+        {
+            <div style="padding:40px; text-align:center;">
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+            </div>
+        }
+        else if (_entries.Count == 0)
+        {
+            <div style="padding:48px; text-align:center; color:#adb5bd;">
+                <MudIcon Icon="@Icons.Material.Outlined.History" Style="font-size:48px; margin-bottom:12px;" />
+                <MudText Typo="Typo.body2">ログイン履歴はまだありません。</MudText>
+            </div>
+        }
+        else
+        {
+            <MudTable Items="_entries"
+                      Hover="true"
+                      Dense="true"
+                      Breakpoint="Breakpoint.None"
+                      Style="border-radius:12px;">
+                <HeaderContent>
+                    <MudTh Style="font-size:11px; font-weight:700; color:#6c757d; text-transform:uppercase; padding:10px 16px; white-space:nowrap;">日時 (UTC)</MudTh>
+                    <MudTh Style="font-size:11px; font-weight:700; color:#6c757d; text-transform:uppercase; padding:10px 16px;">成否</MudTh>
+                    <MudTh Style="font-size:11px; font-weight:700; color:#6c757d; text-transform:uppercase; padding:10px 16px;">ユーザー名</MudTh>
+                    <MudTh Style="font-size:11px; font-weight:700; color:#6c757d; text-transform:uppercase; padding:10px 16px;">表示名</MudTh>
+                    <MudTh Style="font-size:11px; font-weight:700; color:#6c757d; text-transform:uppercase; padding:10px 16px;">ロール</MudTh>
+                    <MudTh Style="font-size:11px; font-weight:700; color:#6c757d; text-transform:uppercase; padding:10px 16px;">クライアントIP</MudTh>
+                    <MudTh Style="font-size:11px; font-weight:700; color:#6c757d; text-transform:uppercase; padding:10px 16px;">User-Agent</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd Style="padding:8px 16px; font-size:12px; color:#495057; white-space:nowrap;">
+                        @context.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")
+                    </MudTd>
+                    <MudTd Style="padding:8px 16px;">
+                        @if (context.Success)
+                        {
+                            <MudChip T="string" Size="Size.Small"
+                                     Style="background:#e8f5e9; color:#2e7d32; font-size:11px; font-weight:600; height:20px;">
+                                成功
+                            </MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small"
+                                     Style="background:#ffebee; color:#c62828; font-size:11px; font-weight:600; height:20px;">
+                                失敗
+                            </MudChip>
+                        }
+                    </MudTd>
+                    <MudTd Style="padding:8px 16px; font-size:13px; font-family:monospace;">@context.UserName</MudTd>
+                    <MudTd Style="padding:8px 16px; font-size:13px;">@(context.DisplayName ?? "-")</MudTd>
+                    <MudTd Style="padding:8px 16px; font-size:13px;">@(context.Role ?? "-")</MudTd>
+                    <MudTd Style="padding:8px 16px; font-size:12px; font-family:monospace; white-space:nowrap;">@(context.ClientIp ?? "-")</MudTd>
+                    <MudTd Style="padding:8px 16px; font-size:11px; color:#6c757d; max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+                           title="@context.UserAgent">
+                        @(context.UserAgent ?? "-")
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+
+</div>
+
+@code {
+    private IReadOnlyList<LoginHistoryEntry>? _entries;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _entries = await LoginHistoryStore.ListRecentAsync(take: 200);
+    }
+}
