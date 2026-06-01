@@ -19,7 +19,7 @@
                 ログイン履歴
             </MudText>
             <MudText Typo="Typo.caption" Style="color:#6c757d;">
-                直近 @(_entries?.Count ?? 0) 件のログイン試行（成功・失敗）を表示しています。
+                直近 @(_entries?.Count ?? 0) 件のログイン試行（成功・失敗）を表示しています（日時は JST）。ヘッダーをクリックしてソート、ページ下部でページ切り替えができます。
             </MudText>
         </div>
         <MudIconButton Icon="@Icons.Material.Outlined.Refresh"
@@ -51,19 +51,32 @@
                       Hover="true"
                       Dense="true"
                       Breakpoint="Breakpoint.None"
+                      RowsPerPage="40"
                       Style="border-radius:12px;">
                 <HeaderContent>
-                    <MudTh Style="font-size:11px; font-weight:700; color:#6c757d; text-transform:uppercase; padding:10px 16px; white-space:nowrap;">日時 (UTC)</MudTh>
-                    <MudTh Style="font-size:11px; font-weight:700; color:#6c757d; text-transform:uppercase; padding:10px 16px;">成否</MudTh>
-                    <MudTh Style="font-size:11px; font-weight:700; color:#6c757d; text-transform:uppercase; padding:10px 16px;">ユーザー名</MudTh>
-                    <MudTh Style="font-size:11px; font-weight:700; color:#6c757d; text-transform:uppercase; padding:10px 16px;">表示名</MudTh>
-                    <MudTh Style="font-size:11px; font-weight:700; color:#6c757d; text-transform:uppercase; padding:10px 16px;">ロール</MudTh>
+                    <MudTh Style="font-size:11px; font-weight:700; color:#6c757d; text-transform:uppercase; padding:10px 16px; white-space:nowrap;">
+                        <MudTableSortLabel T="LoginHistoryEntry" SortBy="e => e.CreatedAt" InitialDirection="SortDirection.Descending">
+                            日時 (JST)
+                        </MudTableSortLabel>
+                    </MudTh>
+                    <MudTh Style="font-size:11px; font-weight:700; color:#6c757d; text-transform:uppercase; padding:10px 16px;">
+                        <MudTableSortLabel T="LoginHistoryEntry" SortBy="e => e.Success">成否</MudTableSortLabel>
+                    </MudTh>
+                    <MudTh Style="font-size:11px; font-weight:700; color:#6c757d; text-transform:uppercase; padding:10px 16px;">
+                        <MudTableSortLabel T="LoginHistoryEntry" SortBy="e => e.UserName">ユーザー名</MudTableSortLabel>
+                    </MudTh>
+                    <MudTh Style="font-size:11px; font-weight:700; color:#6c757d; text-transform:uppercase; padding:10px 16px;">
+                        <MudTableSortLabel T="LoginHistoryEntry" SortBy="e => e.DisplayName ?? string.Empty">表示名</MudTableSortLabel>
+                    </MudTh>
+                    <MudTh Style="font-size:11px; font-weight:700; color:#6c757d; text-transform:uppercase; padding:10px 16px;">
+                        <MudTableSortLabel T="LoginHistoryEntry" SortBy="e => e.Role ?? string.Empty">ロール</MudTableSortLabel>
+                    </MudTh>
                     <MudTh Style="font-size:11px; font-weight:700; color:#6c757d; text-transform:uppercase; padding:10px 16px;">クライアントIP</MudTh>
                     <MudTh Style="font-size:11px; font-weight:700; color:#6c757d; text-transform:uppercase; padding:10px 16px;">User-Agent</MudTh>
                 </HeaderContent>
                 <RowTemplate>
                     <MudTd Style="padding:8px 16px; font-size:12px; color:#495057; white-space:nowrap;">
-                        @context.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")
+                        @context.CreatedAt.AddHours(9).ToString("yyyy-MM-dd HH:mm:ss")
                     </MudTd>
                     <MudTd Style="padding:8px 16px;">
                         @if (context.Success)
@@ -90,6 +103,10 @@
                         @(context.UserAgent ?? "-")
                     </MudTd>
                 </RowTemplate>
+                <PagerContent>
+                    <MudTablePager PageSizeOptions="new int[]{20, 40, 100}"
+                                   RowsPerPageString="1ページの件数:" />
+                </PagerContent>
             </MudTable>
         }
     </MudPaper>

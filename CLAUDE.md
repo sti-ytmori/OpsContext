@@ -1,48 +1,131 @@
-# Microsoft Agent Hackathon 2026 — アイデア検討プロジェクト
+# OpsContext — Microsoft Agent Hackathon 2026
 
-このリポジトリは、Microsoft Agent Hackathon 2026 への応募アイデアを練るための作業場です。Claude Code はディスカッションパートナーとして、論点整理・案の発散と収束・実現性の評価を一緒に行ってください。
+業務担当者のロール（営業/購買/生産/経理）ごとに AI エージェントの語り口とフォーカスが切り替わり、基幹データ x 判断ログ x ナレッジを横断して翻訳・継承する業務コンテキスト基盤。
 
-## コンペ基本情報
+Claude は実装・保守の作業者として動く。コードの追加・修正・調査・デバッグが主な役割。
 
-- **正式名称**: Microsoft Agent Hackathon powered by Tokyo Electron Device
-- **主催/協力**: クラスメソッド / 東京エレクトロンデバイス / 日本マイクロソフト
-- **応募部門**: パートナーベンダー企業部門（SIer向け、Microsoftテクノロジーの使い倒し評価）
-- **提出締切**: 6/1（日）23:59（確定）
-- **審査期間**: 6/2〜6/9
-- **最終審査・表彰式**: 6/18
+## プロジェクト状態
 
-### 必須技術要件
+実装完了。2026/6/2〜6/18 が審査期間で、その間は Azure Container Apps 上での稼働維持が必要。
 
-- **実行基盤**（いずれか1つ以上）: Azure App Service / Functions / Container Apps / AKS / VM / Azure GPU・AI VM
-- **AI技術**（いずれか1つ以上）: Microsoft Foundry（Azure OpenAI含む）/ Azure AI Agent Service / Semantic Kernel / Copilot Studio / Azure AI Speech・Vision・Language 等 / Microsoft Fabric の Data+AI 機能
-- **推奨（任意）**: Azure Cosmos DB / GitHub・GitHub Copilot / Microsoft Power Platform / Microsoft Entra ID
+## 技術スタック
 
-### 提出物
+- Web フレームワーク: ASP.NET Core Blazor Server (.NET 10) + MudBlazor
+- AI エージェント基盤: Microsoft Agent Framework (Microsoft.Agents.AI)
+- LLM: Azure AI Foundry gpt-5.4-mini / Embedding: text-embedding-3-small
+- ベクトル検索: Azure AI Search (opscontext-knowledge / opscontext-context インデックス)
+- RDB: Azure SQL Database (Serverless)
+- コンテナ実行基盤: Azure Container Apps
+- 認証 (デモ用): FakeRoleAuthenticationHandler + Cookie
 
-1. 動作確認可能な成果物URL（審査員が実際に触れる状態。テスト用認証情報の提供も可）— **6/2〜6/18 の評価期間中、稼働状態を維持すること**
-2. Zennブログ記事（**アーキテクチャ図・3分以内のデモ動画（YouTube）必須**。プロンプト設計の説明も記載すること）
-3. GitHubリポジトリURL（任意、減点なし）— 締切後も開発を続ける場合は **branch ではなく tag** で提出時点を示すこと
+## エージェント構成
 
-### 企業部門の賞品
+- Orchestrator: ルーティング・統合
+- ロール別エージェント: SalesAgent / AccountingAgent / PurchasingAgent / ProductionAgent
+- Curator: バックグラウンドで判断ログをコンテキストストアに書き込む (CuratorHostedService)
+- Tool 層: SqlErpTool / AiSearchTool / CsvService / CalcTool / ContextStoreTool
 
-- **最優秀賞**（1社）: トロフィー ＋ Zennでの登壇権（20分）
-- **優秀賞**（1社）: トロフィー ＋ Zennでの登壇権（10分）
-- **奨励賞**（3社）: トロフィー
-- ※企業部門は現金賞金なし。個人部門は最大50万円
+エージェント定義 JSON は `agents/` に置く（orchestrator.json / sales.json / accounting.json / purchasing.json / production.json）。
 
-### Azure クレジット支援
+## プロジェクト構成
 
-- 企業部門: 約5万円相当の追加クレジット（先着順・新規企業対象）→ 申し込み時に確認すること
+```
+OpsContext.sln
+- OpsContext.Web/          # Blazor Server アプリ本体
+  - Components/Pages/      # Chat / ContextViewer / Dataset / DataList / Accounts / Roles / Admin 等
+  - Services/              # SqlUserStore / SqlRolePromptStore / SqlLoginHistoryStore 等
+- OpsContext.Agents/       # エージェント・Tool 層クラスライブラリ
+  - Agents/                # OrchestratorAgent / SalesAgent / AccountingAgent / PurchasingAgent / ProductionAgent
+  - Services/              # CuratorHostedService / CuratorQueue
+  - Tools/                 # SqlErpTool / AiSearchTool / CsvService / CalcTool / ContextStoreTool 等
+  - Models/                # ContextEntry / ConversationEvent / ErpDatasetModels 等
+  - Options/               # OpsContextOptions
+- OpsContext.Seed/         # ナレッジ投入コンソール
+- agents/                  # エージェント定義 JSON (5ファイル)
+- sql/                     # スキーマ DDL + seed データ
+- dev/                     # SDD ドキュメント・Playwright E2E テスト
+- _asset/                  # アーキテクチャ図・コンセプト画像
+```
 
-### 審査基準
+## ビルド・起動・テスト
 
-1. **ビジネスインパクト** — 業務課題の捉え方と解決価値
-2. **アプローチの有効性** — Agentic AI としての振る舞いとアーキテクチャの妥当性
-3. **完成度・実現性** — 安定動作、導入コスト、運用性
+```powershell
+# ビルド
+dotnet build OpsContext.sln
+
+# モックモード起動（Azure 接続不要 — UI 確認用）
+dotnet run --project OpsContext.Web -- --mock
+
+# 本番モード起動（appsettings.Development.json に接続情報が必要）
+dotnet run --project OpsContext.Web
+
+# ホットリロード
+dotnet watch --project OpsContext.Web
+
+# ナレッジ seed 投入（Azure AI Search / Blob 接続情報が必要）
+dotnet run --project OpsContext.Seed
+
+# E2E テスト（Playwright） — 詳細は dev/tests/README.md を参照
+cd dev/tests && npx playwright test
+```
+
+SDK バージョンは `global.json` で 10.0.100-preview に固定済み。
+
+## 接続情報
+
+`OpsContext.Web/appsettings.Development.json`（.gitignore 対象）に記入:
+
+```json
+{
+  "OpsContext": {
+    "AzureOpenAi": {
+      "Endpoint": "https://<resource>.services.ai.azure.com",
+      "ApiKey": "<api-key>",
+      "ChatDeployment": "gpt-5.4-mini",
+      "EmbeddingDeployment": "text-embedding-3-small"
+    },
+    "SqlConnectionString": "Server=tcp:<server>.database.windows.net,1433;Initial Catalog=<db>;...",
+    "AiSearch": {
+      "Endpoint": "https://<resource>.search.windows.net",
+      "ApiKey": "<api-key>",
+      "KnowledgeIndex": "opscontext-knowledge",
+      "ContextIndex": "opscontext-context"
+    },
+    "BlobConnectionString": "DefaultEndpointsProtocol=https;AccountName=<account>;AccountKey=<key>;..."
+  }
+}
+```
+
+`OpsContext.Seed/appsettings.json` にも同じ値を記入する。
+
+## 開発ワークフロー
+
+`dev/plan.md` が設計の source of truth。`dev/specs/NN-slug/design.md` が機能単位の HOW と進捗チェックリスト。詳細手順は `dev/CLAUDE.md` を参照。
+
+人手タスク（Azure ポータル操作・認証情報記入・動画撮影・提出フォーム入力等）は `dev/specs/human-task.md` に集約する。
+
+## 作業規約
+
+- 箇条書きは `- `（ハイフン + 半角スペース）を使う。
+- 太字 (****) やイタリクス (**) の Markdown 記法は使わない。
+- 括弧は半角 () を使う（全角不可）。
+- 一度に確認する質問は3つまでに絞る。
+- 発散と収束を意識する（結論を急がず選択肢を広げてから絞る）。
+- 審査基準（ビジネスインパクト / Agentic 性 / 完成度・実現性）で常に評価する。
+
+## コンペ提出要件（要点）
+
+- 提出物1: 成果物 URL — 6/2〜6/18 の審査期間中、稼働状態を維持すること
+- 提出物2: Zenn ブログ記事 — アーキテクチャ図・3分以内のデモ動画（YouTube）・プロンプト設計の説明が必須
+- 提出物3: GitHub リポジトリ URL（任意）— 締切後も開発を続ける場合は branch ではなく tag で提出時点を示すこと
+- 必須技術要件: Azure 実行基盤（Container Apps 等）+ Microsoft AI 技術（Azure OpenAI / Agent Framework 等）をいずれか1つ以上使用
 
 ## 関連リソース
 
-- コンペ概要: <https://zenn.dev/hackathons/microsoft-agent-hackathon-2026?tab=overview>
-- ルール詳細: <https://zenn.dev/hackathons/microsoft-agent-hackathon-2026?tab=rule>
-- Microsoft Agent Framework ドキュメント: <https://learn.microsoft.com/ja-jp/agent-framework/overview/>
-- Azure AI Agent Service 学習パス: <https://learn.microsoft.com/ja-jp/training/paths/develop-ai-agents-azure/>
+- コンペ概要: https://zenn.dev/hackathons/microsoft-agent-hackathon-2026
+- ルール詳細: https://zenn.dev/hackathons/microsoft-agent-hackathon-2026?tab=rule
+- Microsoft Agent Framework: https://learn.microsoft.com/ja-jp/agent-framework/overview/
+- Azure AI Agent Service 学習パス: https://learn.microsoft.com/ja-jp/training/paths/develop-ai-agents-azure/
+- セットアップ手順: SETUP.md
+- 実装計画: dev/plan.md
+- 人手タスク一覧: dev/specs/human-task.md

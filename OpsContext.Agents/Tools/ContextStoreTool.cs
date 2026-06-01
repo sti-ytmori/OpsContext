@@ -177,6 +177,47 @@ public sealed class ContextStoreTool : IContextStoreTool
     }
 
     // -----------------------------------------------------------------------
+    // DeleteEntryAsync
+    // -----------------------------------------------------------------------
+    public async Task DeleteEntryAsync(string entryId, CancellationToken ct)
+    {
+        const string sql = "DELETE FROM ContextEntries WHERE EntryId = @EntryId";
+
+        await using var conn = new SqlConnection(_connectionString);
+        await conn.OpenAsync(ct);
+
+        await using var cmd = new SqlCommand(sql, conn);
+        cmd.Parameters.Add(new SqlParameter("@EntryId", entryId));
+        cmd.CommandTimeout = 30;
+        await cmd.ExecuteNonQueryAsync(ct);
+
+        _logger.LogInformation("ContextEntry deleted: entryId={EntryId}", entryId);
+    }
+
+    // -----------------------------------------------------------------------
+    // DeleteCaseContextAsync
+    // -----------------------------------------------------------------------
+    public async Task DeleteCaseContextAsync(string caseId, CancellationToken ct)
+    {
+        await using var conn = new SqlConnection(_connectionString);
+        await conn.OpenAsync(ct);
+
+        foreach (var sql in new[]
+        {
+            "DELETE FROM ContextEntries  WHERE CaseId = @CaseId",
+            "DELETE FROM FocusSnapshots  WHERE CaseId = @CaseId",
+        })
+        {
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.Add(new SqlParameter("@CaseId", caseId));
+            cmd.CommandTimeout = 30;
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        _logger.LogInformation("CaseContext deleted: caseId={CaseId}", caseId);
+    }
+
+    // -----------------------------------------------------------------------
     // 共通 INSERT ロジック
     // 1) ContextEntries に INSERT (NewGuid EntryId)
     // 2) AI Search upsert（失敗しても catch してログ記録、SQL コミットを維持）

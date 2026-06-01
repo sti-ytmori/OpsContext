@@ -84,6 +84,8 @@ public sealed class SqlLoginHistoryStore : ILoginHistoryStore
         string? userAgent,
         CancellationToken ct = default)
     {
+        await EnsureSchemaAsync(ct);
+
         const string sql = """
             INSERT INTO LoginHistory (UserName, DisplayName, Role, Success, ClientIp, UserAgent)
             VALUES (@UserName, @DisplayName, @Role, @Success, @ClientIp, @UserAgent)

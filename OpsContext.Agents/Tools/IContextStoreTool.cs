@@ -37,4 +37,10 @@ public interface IContextStoreTool
     /// FocusSnapshots テーブルに新規レコードを INSERT する（上書きせず追記）。
     /// </summary>
     Task InsertFocusSnapshotAsync(string caseId, string role, string summaryMd, CancellationToken ct);
+
+    /// <summary>EntryId で指定した単一エントリを削除する。</summary>
+    Task DeleteEntryAsync(string entryId, CancellationToken ct);
+
+    /// <summary>caseId に紐づく全エントリ（ContextEntries + FocusSnapshots）を削除する。</summary>
+    Task DeleteCaseContextAsync(string caseId, CancellationToken ct);
 }

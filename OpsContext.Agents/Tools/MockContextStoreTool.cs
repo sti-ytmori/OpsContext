@@ -146,6 +146,23 @@ public sealed class MockContextStoreTool : IContextStoreTool, IDemoService
         return Task.CompletedTask;
     }
 
+    public Task DeleteEntryAsync(string entryId, CancellationToken ct)
+    {
+        lock (_lock)
+            _entries.RemoveAll(e => e.EntryId == entryId);
+        return Task.CompletedTask;
+    }
+
+    public Task DeleteCaseContextAsync(string caseId, CancellationToken ct)
+    {
+        lock (_lock)
+        {
+            _entries.RemoveAll(e => e.CaseId == caseId);
+            _snapshots.RemoveAll(s => s.CaseId == caseId);
+        }
+        return Task.CompletedTask;
+    }
+
     private Task<string> AppendEntry(
         string caseId, string role, string author, string kind, string text)
     {

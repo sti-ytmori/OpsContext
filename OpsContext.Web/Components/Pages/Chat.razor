@@ -159,17 +159,20 @@
                             送信
                         </MudButton>
                     }
-                    <MudTooltip Text="エージェントの最後の回答を決定として案件コンテキストに保存し、Curatorがロールフォーカスを更新します"
-                                Placement="Placement.Top" Arrow="true">
-                        <MudButton Variant="Variant.Outlined"
-                                   Color="Color.Success"
-                                   OnClick="ConfirmDecision"
-                                   Disabled="@(_isLoading || _history.Count == 0)"
-                                   StartIcon="@Icons.Material.Filled.CheckCircle"
-                                   Style="border-radius:8px; font-weight:600;">
-                            コンテキストに保存
-                        </MudButton>
-                    </MudTooltip>
+                    @if (_linkedTableName is not null)
+                    {
+                        <MudTooltip Text="エージェントの最後の回答を決定として案件コンテキストに保存し、Curatorがロールフォーカスを更新します"
+                                    Placement="Placement.Top" Arrow="true">
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Success"
+                                       OnClick="ConfirmDecision"
+                                       Disabled="@(_isLoading || _history.Count == 0)"
+                                       StartIcon="@Icons.Material.Filled.CheckCircle"
+                                       Style="border-radius:8px; font-weight:600;">
+                                コンテキストに保存
+                            </MudButton>
+                        </MudTooltip>
+                    }
                     <MudSpacer />
                     <MudTooltip Text="コンテキスト履歴を表示">
                         <MudIconButton Icon="@Icons.Material.Outlined.History"
@@ -240,36 +243,39 @@
         }
 
         @* ─── ロールフォーカス（FocusSnapshot）────────────────────── *@
-        <div style="display:flex; align-items:center; gap:8px; margin-top:12px; margin-bottom:4px;">
-            <MudIcon Icon="@Icons.Material.Outlined.CenterFocusStrong"
-                     Style="font-size:18px; color:#6c757d;" />
-            <MudText Typo="Typo.subtitle2" Style="font-weight:600; color:#495057;">
-                ロールフォーカス
-            </MudText>
-            <MudIconButton Icon="@Icons.Material.Outlined.Refresh"
-                           Size="Size.Small"
-                           title="フォーカスを再読み込み"
-                           OnClick="ReloadFocusSnapshot" />
-        </div>
+        @if (_linkedTableName is not null)
+        {
+            <div style="display:flex; align-items:center; gap:8px; margin-top:12px; margin-bottom:4px;">
+                <MudIcon Icon="@Icons.Material.Outlined.CenterFocusStrong"
+                         Style="font-size:18px; color:#6c757d;" />
+                <MudText Typo="Typo.subtitle2" Style="font-weight:600; color:#495057;">
+                    ロールフォーカス
+                </MudText>
+                <MudIconButton Icon="@Icons.Material.Outlined.Refresh"
+                               Size="Size.Small"
+                               title="フォーカスを再読み込み"
+                               OnClick="ReloadFocusSnapshot" />
+            </div>
 
-        @if (!string.IsNullOrEmpty(_focusSnapshot))
-        {
-            <MudPaper Elevation="0"
-                      Style="background:#fffde7; border:1px solid #fff176; border-radius:12px; padding:14px 16px;">
-                <MudText Typo="Typo.body2"
-                         Style="white-space:pre-wrap; line-height:1.75; color:#37474f; font-size:12px;">
-                    @_focusSnapshot
-                </MudText>
-            </MudPaper>
-        }
-        else
-        {
-            <MudPaper Elevation="0"
-                      Style="padding:20px; text-align:center; border:1px dashed #dee2e6; border-radius:12px; background:#ffffff;">
-                <MudText Typo="Typo.body2" Style="color:#adb5bd; line-height:1.7; font-size:12px;">
-                    「コンテキストに保存」後に生成します
-                </MudText>
-            </MudPaper>
+            @if (!string.IsNullOrEmpty(_focusSnapshot))
+            {
+                <MudPaper Elevation="0"
+                          Style="background:#fffde7; border:1px solid #fff176; border-radius:12px; padding:14px 16px;">
+                    <MudText Typo="Typo.body2"
+                             Style="white-space:pre-wrap; line-height:1.75; color:#37474f; font-size:12px;">
+                        @_focusSnapshot
+                    </MudText>
+                </MudPaper>
+            }
+            else
+            {
+                <MudPaper Elevation="0"
+                          Style="padding:20px; text-align:center; border:1px dashed #dee2e6; border-radius:12px; background:#ffffff;">
+                    <MudText Typo="Typo.body2" Style="color:#adb5bd; line-height:1.7; font-size:12px;">
+                        「コンテキストに保存」後に生成します
+                    </MudText>
+                </MudPaper>
+            }
         }
     </div>
 </div>

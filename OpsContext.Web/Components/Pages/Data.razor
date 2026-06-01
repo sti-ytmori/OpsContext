@@ -263,6 +263,13 @@
                                Style="border-radius:8px; font-weight:600;">
                         コンテキストに保存
                     </MudButton>
+                    <MudSpacer />
+                    <MudTooltip Text="コンテキスト履歴を表示">
+                        <MudIconButton Icon="@Icons.Material.Outlined.History"
+                                       Size="Size.Small"
+                                       Style="color:#6c757d;"
+                                       OnClick="@(() => Nav.NavigateTo($"/context?caseId={Uri.EscapeDataString(_caseId)}"))" />
+                    </MudTooltip>
                 </div>
             </div>
         </MudPaper>
