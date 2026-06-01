@@ -236,7 +236,6 @@ ngrok http 5179
 | Excel 処理 | ClosedXML (MIT) |
 | コンテナ実行基盤 | Azure Container Apps |
 | 認証（デモ用） | FakeRoleAuthenticationHandler + Cookie |
-| ナレーション | Azure AI Speech（デモ動画） |
 
 ---
 
