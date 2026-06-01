@@ -92,34 +92,6 @@ dotnet dev-certs https --trust
 
 ---
 
-## SQL スキーマ・seed データ投入
-
-Azure SQL Database 作成後、以下の順で実行する。
-`-f 65001`（UTF-8 指定）は必須（省略すると日本語コメント周辺の列定義が欠落するバグが発生する）。
-
-```powershell
-$S = "tcp:<server>.database.windows.net,1433"
-$d = "<database>"
-$U = "<user>"
-$P = "<password>"
-
-sqlcmd -S $S -d $d -U $U -P $P -i sql/schema.sql               -b -f 65001
-sqlcmd -S $S -d $d -U $U -P $P -i sql/schema_context_store.sql -b -f 65001
-sqlcmd -S $S -d $d -U $U -P $P -i sql/seed.sql                 -b -f 65001
-```
-
----
-
-## AI Search ナレッジ投入
-
-接続情報記入後に実行する。インデックスが存在しない場合は自動作成される。
-
-```powershell
-dotnet run --project OpsContext.Seed
-```
-
----
-
 ## ビルド・起動コマンド一覧
 
 ```powershell
@@ -150,42 +122,48 @@ OpsContext.sln
 │   ├── Components/
 │   │   ├── Pages/
 │   │   │   ├── Chat.razor           # メインチャット
-│   │   │   ├── Cases.razor          # 案件一覧
-│   │   │   └── QuoteReview.razor    # Excel 突合画面
+│   │   │   ├── ContextViewer.razor  # コンテキストストア閲覧
+│   │   │   ├── Dataset.razor        # ERPデータセット表示
+│   │   │   ├── DataList.razor       # データ一覧
+│   │   │   ├── Data.razor           # データ詳細
+│   │   │   ├── Accounts.razor       # アカウント管理
+│   │   │   ├── Roles.razor          # ロール設定
+│   │   │   ├── Admin.razor          # 管理画面
+│   │   │   ├── Login.razor          # ログイン
+│   │   │   └── LoginHistory.razor   # ログイン履歴
 │   │   └── Layout/MainLayout.razor  # ロール別ヘッダー色
-│   ├── Services/FakeRoleAuthenticationHandler.cs
+│   ├── Services/                # SqlUserStore / SqlRolePromptStore / SqlLoginHistoryStore / RoleStateService 等
 │   └── appsettings.Development.json # 接続情報（.gitignore 対象）
 ├── OpsContext.Agents/           # エージェント・Tool 層クラスライブラリ
-│   ├── Agents/                  # Orchestrator / Sales / Accounting / Purchasing / Production / Curator
-│   ├── Tools/                   # SqlErpTool / AiSearchTool / ExcelService / CalcTool / ContextStoreTool
-│   ├── Models/                  # QuoteLine / ContextEntry / ConversationEvent
-│   ├── Services/                # CuratorHostedService（バックグラウンド Curator）
-│   └── Options/                 # OpsContextOptions（設定バインド）
+│   ├── Agents/                  # OrchestratorAgent / SalesAgent / AccountingAgent / PurchasingAgent / ProductionAgent
+│   │                            # AgentDefinition / AgentDefinitionLoader / AgentPromptComposer
+│   ├── Tools/                   # SqlErpTool / AiSearchTool / CsvService / CalcTool / ContextStoreTool
+│   │                            # SqlErpDatasetStore / SqlDataGridStore 等（Mock 実装含む）
+│   ├── Models/                  # QuoteLine / ContextEntry / ConversationEvent / ErpDatasetModels 等
+│   ├── Services/                # CuratorHostedService / CuratorQueue（バックグラウンド Curator）
+│   ├── Options/                 # OpsContextOptions（設定バインド）
+│   ├── GridAgentService.cs      # グリッド向けエージェントサービス
+│   └── QuoteValidationService.cs
 ├── OpsContext.Seed/             # ナレッジ投入コンソール
+├── agents/                      # エージェント定義 JSON（orchestrator / sales / accounting / purchasing / production）
 ├── sql/
-│   ├── schema.sql               # 擬似ERP 7テーブル DDL
-│   ├── schema_context_store.sql # Cases / ContextEntries / FocusSnapshots
-│   └── seed.sql                 # A商事・弁P-101 サンプルデータ
-├── sample/
-│   └── 見積依頼明細.xlsx         # デモ用サンプル Excel（6行、NG/Warning/OK 混在）
+│   ├── schema.sql               # 擬似ERP DDL
+│   ├── schema_context_store.sql # ContextEntries / FocusSnapshots 等
+│   ├── schema_data_grid.sql
+│   ├── schema_erp_snapshot.sql
+│   ├── schema_login_history.sql
+│   ├── schema_role_prompts.sql
+│   ├── schema_users.sql
+│   ├── seed.sql                 # A商事・弁P-101 サンプルデータ
+│   ├── seed_users.sql
+│   └── update_personal_prompts.sql
+├── _asset/                      # アーキテクチャ図・コンセプト画像
 ├── Dockerfile                   # リポジトリルートに配置済み
 ├── dev/
 │   ├── plan.md                  # 実装計画（source of truth）
 │   └── specs/                   # モジュール別設計書（design.md）
 └── README.md                    # このファイル
 ```
-
----
-
-## デモシナリオ（E2E 1本）
-
-1. ブラウザで起動 URL を開く
-2. 右上ドロップダウンで「Sales（営業）」を選択 → ヘッダーが緑に
-3. チャットに「A商事から弁P-101を200個、納期2週間で見積依頼が来た」と入力
-4. エージェントが SQL（与信・在庫・生産能力）と AI Search（過去案件・規程）を横断して回答
-5. 「この線で進めます」と入力 → Curator が判断をコンテキストストアに記録
-6. ロール切替「Accounting（経理）」→ 同案件を案件一覧から開く
-7. 経理視点の要約に「A商事 与信遅延歴 / 与信枠消費率」が含まれることを確認
 
 ---
 
@@ -233,9 +211,8 @@ ngrok http 5179
 | Embedding | text-embedding-3-small |
 | ベクトル検索 | Azure AI Search (opscontext-knowledge / opscontext-context) |
 | RDB | Azure SQL Database (Serverless, 無料オファー) |
-| Excel 処理 | ClosedXML (MIT) |
+| Markdown レンダリング | Markdig |
 | コンテナ実行基盤 | Azure Container Apps |
-| 認証（デモ用） | FakeRoleAuthenticationHandler + Cookie |
 
 ---
 
